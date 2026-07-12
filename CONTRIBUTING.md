@@ -7,7 +7,7 @@ This covers developing on Ready Video. For using the tool, see [README.md](READM
 Requires Python 3.11–3.13. (The transcription stack depends on PyTorch wheels not yet available for 3.14.)
 
 ```bash
-git clone <repo-url> ready-video
+git clone https://github.com/fmontes/ready-video.git
 cd ready-video
 python -m venv .venv
 source .venv/bin/activate

@@ -17,7 +17,7 @@ Requires Python 3.11, 3.12, or 3.13.
 Transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — a lightweight, CPU-friendly Whisper backend (no PyTorch). The `transcription` extra is a modest download (roughly a couple hundred MB, plus the speech model on first run). Install with [`uv`](https://docs.astral.sh/uv/) so the pinned `uv.lock` is honored:
 
 ```bash
-git clone <repo-url> ready-video
+git clone https://github.com/fmontes/ready-video.git
 cd ready-video
 uv sync --extra transcription
 ```
