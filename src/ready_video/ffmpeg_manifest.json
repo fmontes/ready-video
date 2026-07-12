@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "managed_provider": "ready-video-managed",
+  "cache_subdir": "ffmpeg",
+  "managed_platforms": {
+    "darwin": {
+      "archive_url": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/darwin.zip",
+      "archive_sha256": "70fd5b21cb37b6ea97c8b584cf76b3cc6a90179831c9c269811b9716c28605fb",
+      "archive_size": 53079896,
+      "ffmpeg_sha256": "430d60fbf419dab28daee9b679e7929a31ee9bae53f6e42e8ae26b725584290f",
+      "ffprobe_sha256": "a4da5b4f4468ed61fd89d1f5d8096b128e7167c26c7c35e38ea6fd21c169f4d6"
+    },
+    "darwin_arm64": {
+      "archive_url": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/darwin_arm64.zip",
+      "archive_sha256": "b2da44a8169c4d09a97db996250690c3346f72e4795521d23d3dbb1e72421207",
+      "archive_size": 41925556,
+      "ffmpeg_sha256": "326895b16940f238d76e902fc71150f10c388c281985756f9850ff800a2f1499",
+      "ffprobe_sha256": "307e09bc01bd72bde5f441a1a6df68769da3b2b6e431accfbfc9cf3893ad00c4"
+    },
+    "linux": {
+      "archive_url": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/linux.zip",
+      "archive_sha256": "ca75b05e887c7a97676632f673031875847be83daa9794298fed9cef8cac14ad",
+      "archive_size": 142008975,
+      "ffmpeg_sha256": "ff45e18f5823f3036e419b22de5582ee5c956907910465e94e6d56df0aebb470",
+      "ffprobe_sha256": "9960ffd53be2a73bf2d33849ab792ba405e3701a996917c6f6b5d28bc9354296"
+    },
+    "linux_arm64": {
+      "archive_url": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/linux_arm64.zip",
+      "archive_sha256": "e03efe471c03b999f10988d5db62ae3bd94837463291b3c7755528b100e97d6f",
+      "archive_size": 131816005,
+      "ffmpeg_sha256": "e644ea228bebe2cc122eb785947be1de6d02a5afd3c409c12ec3f08d236e6e76",
+      "ffprobe_sha256": "999b08a9d28f01cb1b362b74ce48fc921ed9afca59b2bb9bd1d75c3c57104dab"
+    },
+    "win32": {
+      "archive_url": "https://github.com/zackees/ffmpeg_bins/raw/main/v8.0/win32.zip",
+      "archive_sha256": "92662c2241e93fe71b3f3a01e94a0b0dc8cfad726019f96b83bc109ce44c5d0b",
+      "archive_size": 72065209,
+      "ffmpeg_sha256": "5af82a0d4fe2b9eae211b967332ea97edfc51c6b328ca35b827e73eac560dc0d",
+      "ffprobe_sha256": "192a1d6899059765ac8c39764fc3148d4e6049955956dc2029f81f4bd6a8972d"
+    }
+  },
+  "required_filters": [
+    "silencedetect",
+    "atrim",
+    "trim",
+    "concat",
+    "scale",
+    "crop",
+    "fps",
+    "setsar",
+    "ass",
+    "loudnorm",
+    "format"
+  ],
+  "required_encoders": [
+    "libx264"
+  ],
+  "optional_encoders": [
+    "h264_nvenc",
+    "h264_videotoolbox"
+  ]
+}
