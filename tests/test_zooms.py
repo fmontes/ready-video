@@ -53,7 +53,47 @@ def test_validate_agent_response_parses_fenced_json_with_inclusive_end_and_clamp
     assert plan.zooms[0].start == 0.0
     assert plan.zooms[0].end == 1.2
     assert plan.zooms[0].end_word_index == 1
-    assert plan.zooms[0].intensity == 1.15
+
+
+def test_validate_agent_response_unwraps_claude_structured_output_envelope():
+    # Claude --output-format json wraps the answer; the validated object is
+    # under structured_output. Regression for the "0 zooms" bug.
+    config = _config(min_duration_s=0.1, min_gap_s=0)
+    transcript = _transcript([(0, 0.4), (0.5, 1.2), (1.3, 1.9)])
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "is_error": False,
+            "result": "irrelevant prose",
+            "structured_output": {
+                "zooms": [{"rank": 1, "start_word_index": 0, "end_word_index": 2, "intensity": 1.1, "reason": "peak"}]
+            },
+        }
+    )
+
+    plan = validate_agent_response(envelope, transcript, config, backend="claude")
+
+    assert plan.backend == "claude"
+    assert len(plan.zooms) == 1
+    assert plan.zooms[0].end_word_index == 2
+
+
+def test_validate_agent_response_recovers_json_from_claude_result_prose():
+    # Fallback path: StructuredOutput unavailable, JSON fenced inside result prose.
+    config = _config(min_duration_s=0.1, min_gap_s=0)
+    transcript = _transcript([(0, 0.4), (0.5, 1.2), (1.3, 1.9)])
+    result_text = (
+        'The tool was denied. Here is the JSON:\n\n'
+        '```json\n{"zooms": [{"rank": 1, "start_word_index": 0, "end_word_index": 1, '
+        '"intensity": 1.1, "reason": "beat"}]}\n```\n'
+    )
+    envelope = json.dumps({"type": "result", "result": result_text})
+
+    plan = validate_agent_response(envelope, transcript, config, backend="claude")
+
+    assert len(plan.zooms) == 1
+    assert plan.zooms[0].end_word_index == 1
+    assert plan.zooms[0].intensity == 1.1  # within [1.08, 1.15], left as-is
 
 
 def test_validate_agent_response_rejects_duplicate_ranks_and_invalid_indices():
@@ -230,14 +270,19 @@ def test_plan_zooms_announces_cli_and_prompts_for_schema(tmp_path, monkeypatch, 
 
 
 @pytest.mark.parametrize(
-    ("backend_name", "expected_schema_flag"),
-    [("claude", "--json-schema"), ("codex", "--output-schema"), ("opencode", None)],
+    ("backend_name", "expected_schema_flag", "schema_as"),
+    [
+        # Claude's --json-schema takes the schema inline as JSON, not a path.
+        ("claude", "--json-schema", "contents"),
+        ("codex", "--output-schema", "path"),
+        ("opencode", None, None),
+    ],
 )
-def test_cli_backend_invocation_contracts(tmp_path, monkeypatch, backend_name, expected_schema_flag):
+def test_cli_backend_invocation_contracts(tmp_path, monkeypatch, backend_name, expected_schema_flag, schema_as):
     prompt_path = tmp_path / "prompt.txt"
     schema_path = tmp_path / "schema.json"
     prompt_path.write_text("Segment 0: 0:secret-word")
-    schema_path.write_text("{}")
+    schema_path.write_text('{"type": "object"}')
     calls = []
 
     def fake_run(args, **kwargs):
@@ -260,7 +305,16 @@ def test_cli_backend_invocation_contracts(tmp_path, monkeypatch, backend_name, e
     args = calls[0][0]
     assert args[0] == f"/bin/{backend_name}"
     if expected_schema_flag:
-        assert args[args.index(expected_schema_flag) + 1] == str(schema_path)
+        schema_arg = args[args.index(expected_schema_flag) + 1]
+        if schema_as == "contents":
+            assert schema_arg == schema_path.read_text()
+        else:
+            assert schema_arg == str(schema_path)
+    if backend_name == "claude":
+        # Only StructuredOutput is allowed; write/read-capable tools are disabled.
+        assert args[args.index("--allowedTools") + 1] == "StructuredOutput"
+        disallowed = args[args.index("--disallowedTools") + 1]
+        assert "Bash" in disallowed and "Write" in disallowed
     if backend_name == "opencode":
         assert args[args.index("--file") + 1] == str(prompt_path)
     assert json.loads(response) == {"zooms": []}

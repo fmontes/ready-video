@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,8 +84,24 @@ class CliBackend:
             cwd = Path(tmp)
             if self.name == "claude":
                 prompt = prompt_path.read_text()
+                # --json-schema takes the schema inline as JSON, not a file path.
+                # The CLI returns structured output via the StructuredOutput tool,
+                # so it must be allowed; every other (write/read-capable) tool is
+                # disabled. The result lands in the envelope's structured_output.
+                schema_json = schema_path.read_text()
                 completed = subprocess.run(
-                    [executable, "--print", "--output-format", "json", "--json-schema", str(schema_path)],
+                    [
+                        executable,
+                        "--print",
+                        "--output-format",
+                        "json",
+                        "--json-schema",
+                        schema_json,
+                        "--allowedTools",
+                        "StructuredOutput",
+                        "--disallowedTools",
+                        "Bash,Read,Write,Edit,WebFetch,WebSearch,Glob,Grep",
+                    ],
                     input=prompt,
                     cwd=cwd,
                     text=True,
@@ -342,8 +359,33 @@ def _nearby_aligned_end(word: Word, words: list[Word]) -> bool:
 def _json_payload(raw: str) -> str:
     text = raw.strip()
     if text.startswith("{") or text.startswith("["):
-        return text
+        return _unwrap_envelope(text)
     return _strip_fence(text)
+
+
+def _unwrap_envelope(text: str) -> str:
+    """Unwrap a CLI result envelope to the JSON object holding ``zooms``.
+
+    Claude's ``--output-format json`` wraps the answer in a result envelope. The
+    schema-validated object is under ``structured_output``; the model text is
+    under ``result`` (which may itself be fenced JSON). Codex/opencode and
+    hand-written responses are already the bare object and pass through.
+    """
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    if not isinstance(parsed, dict):
+        return text
+    if "zooms" in parsed:
+        return text  # already the bare payload
+    structured = parsed.get("structured_output")
+    if isinstance(structured, dict):
+        return json.dumps(structured)
+    result = parsed.get("result")
+    if isinstance(result, str):
+        return _strip_fence(result.strip())
+    return text
 
 
 def _strip_fence(raw: str) -> str:
@@ -352,6 +394,10 @@ def _strip_fence(raw: str) -> str:
         lines = text.splitlines()
         if lines[-1].strip() == "```":
             return "\n".join(lines[1:-1]).strip()
+    # Fallback: a fenced ```json block embedded in surrounding prose.
+    fence = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
+    if fence:
+        return fence.group(1).strip()
     return text
 
 
