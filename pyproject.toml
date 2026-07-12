@@ -5,13 +5,32 @@ description = "Zero-config talking-head video preparation for shorts, reels, and
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
-authors = [{ name = "Ready Video contributors" }]
+authors = [{ name = "Freddy Montes", email = "freddymontes@gmail.com" }]
+keywords = ["video", "subtitles", "whisperx", "ffmpeg", "shorts", "reels", "tiktok", "silence-removal"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Video",
+]
 dependencies = [
   "platformdirs>=4.0",
   "pydantic>=2.7",
   "pydantic-settings>=2.2",
   "PyYAML>=6.0",
 ]
+
+# TODO: set these to your public repo before release, then re-run `uv build`.
+[project.urls]
+Homepage = "https://github.com/CHANGEME/ready-video"
+Repository = "https://github.com/CHANGEME/ready-video"
+Issues = "https://github.com/CHANGEME/ready-video/issues"
 
 [project.optional-dependencies]
 transcription = ["whisperx>=3.3"]
