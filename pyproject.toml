@@ -26,11 +26,10 @@ dependencies = [
   "PyYAML>=6.0",
 ]
 
-# TODO: set these to your public repo before release, then re-run `uv build`.
 [project.urls]
-Homepage = "https://github.com/CHANGEME/ready-video"
-Repository = "https://github.com/CHANGEME/ready-video"
-Issues = "https://github.com/CHANGEME/ready-video/issues"
+Homepage = "https://github.com/fmontes/ready-video"
+Repository = "https://github.com/fmontes/ready-video"
+Issues = "https://github.com/fmontes/ready-video/issues"
 
 [project.optional-dependencies]
 transcription = ["whisperx>=3.3"]
