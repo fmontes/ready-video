@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "Freddy Montes", email = "freddymontes@gmail.com" }]
-keywords = ["video", "subtitles", "whisperx", "ffmpeg", "shorts", "reels", "tiktok", "silence-removal"]
+keywords = ["video", "subtitles", "whisper", "ffmpeg", "shorts", "reels", "tiktok", "silence-removal"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -32,20 +32,12 @@ Repository = "https://github.com/fmontes/ready-video"
 Issues = "https://github.com/fmontes/ready-video/issues"
 
 [project.optional-dependencies]
-# Verified working combo (macOS arm64, Python 3.11): torch 2.8.0 / torchcodec
-# 0.7.0 / whisperx 3.8.6. torch, torchcodec, torchaudio, and torchvision are
-# tightly coupled and pinned to patch-level so a torch minor bump can't
-# reintroduce the torchcodec/FFmpeg load failure. See CONTRIBUTING.md.
-transcription = [
-  "whisperx~=3.8",
-  "torch~=2.8.0",
-  "torchaudio~=2.8.0",
-  "torchvision~=0.23.0",
-  "torchcodec~=0.7.0",
-  "ctranslate2~=4.8",
-  "transformers~=4.57",
-  "numpy~=2.4",
-]
+# Transcription uses faster-whisper (CTranslate2 backend) for both text and
+# word-level timestamps — no torch/torchvision/torchcodec/pyannote. This keeps
+# the install ~200MB instead of multiple GB and avoids the torchcodec/FFmpeg
+# load fragility. word_timestamps are decoder-derived; transcript.py applies a
+# small start-time correction. See CONTRIBUTING.md.
+transcription = ["faster-whisper~=1.2"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import importlib.util
-import inspect
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,62 +46,68 @@ class Transcript(BaseModel):
     warnings: list[dict[str, str]] = Field(default_factory=list)
 
 
+# faster-whisper word timestamps run slightly early vs forced alignment.
+# Measured median start bias ≈ -66ms across a Spanish clip; nudging starts
+# later by this much roughly doubles the words landing within two output
+# frames of a forced-alignment reference. Ends drift less, so a smaller nudge.
+_WORD_START_CORRECTION_S = 0.06
+_WORD_END_CORRECTION_S = 0.04
+
+
 def transcribe(speech_wav: Path, output_path: Path, pair: BinaryPair, config: ResolvedConfig) -> Transcript:
     duration = media_duration(speech_wav, pair)
     try:
-        transcript = _transcribe_with_whisperx(speech_wav, duration, config)
+        transcript = _transcribe_with_faster_whisper(speech_wav, duration, config)
     except ImportError as exc:
         raise ReadyVideoError(
             "TRANSCRIPTION_UNAVAILABLE",
-            "WhisperX is required for transcription and word-level subtitle timing.",
-            'Install the transcription dependencies with `python -m pip install -e ".[transcription]"`, then rerun `ready-video doctor`.',
+            "faster-whisper is required for transcription and word-level subtitle timing.",
+            'Install the transcription dependencies with `uv sync --extra transcription` '
+            '(or `pip install ".[transcription]"`), then rerun `ready-video doctor`.',
             details=str(exc),
         ) from exc
     except ReadyVideoError:
         raise
     except Exception as exc:
-        raise ReadyVideoError("TRANSCRIPTION_FAILED", "WhisperX transcription failed.", details=str(exc)) from exc
+        raise ReadyVideoError("TRANSCRIPTION_FAILED", "faster-whisper transcription failed.", details=str(exc)) from exc
     atomic_write_json(output_path, transcript)
     return transcript
 
 
-def _transcribe_with_whisperx(speech_wav: Path, duration: float, config: ResolvedConfig) -> Transcript:
-    import whisperx  # type: ignore
+def _transcribe_with_faster_whisper(speech_wav: Path, duration: float, config: ResolvedConfig) -> Transcript:
+    from faster_whisper import WhisperModel  # type: ignore
 
     device = "cpu" if config.transcription.device == "auto" else config.transcription.device
     compute_type = "int8" if config.transcription.compute_type == "auto" else config.transcription.compute_type
     model_name = "small" if config.transcription.model == "auto" else config.transcription.model
-    model = whisperx.load_model(model_name, device, compute_type=compute_type, language=None if config.transcription.language == "auto" else config.transcription.language)
-    result = _call_whisperx_transcribe(model, speech_wav, config)
-    language = result.get("language") or "unknown"
-    model_a, metadata = whisperx.load_align_model(language_code=language, device=device)
-    aligned = whisperx.align(result["segments"], model_a, metadata, str(speech_wav), device, return_char_alignments=False)
-    return normalize_whisperx(aligned, duration, language)
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
-
-def _call_whisperx_transcribe(model: Any, speech_wav: Path, config: ResolvedConfig) -> dict[str, Any]:
-    signature = inspect.signature(model.transcribe)
-    supported = set(signature.parameters)
-    kwargs: dict[str, Any] = {}
-    if "batch_size" in supported:
-        kwargs["batch_size"] = 8
-    if "language" in supported and config.transcription.language != "auto":
+    kwargs: dict[str, Any] = {"word_timestamps": True, "beam_size": 8}
+    if config.transcription.language != "auto":
         kwargs["language"] = config.transcription.language
     if config.transcription.initial_prompt:
-        if "initial_prompt" not in supported:
-            raise ReadyVideoError(
-                "TRANSCRIPTION_FAILED",
-                "The installed WhisperX transcribe API does not support transcription.initial_prompt.",
-                "Remove transcription.initial_prompt or install a WhisperX version that supports it.",
-            )
         kwargs["initial_prompt"] = config.transcription.initial_prompt
-    result = model.transcribe(str(speech_wav), **kwargs)
-    if not isinstance(result, dict):
-        try:
-            result = dict(result)
-        except Exception as exc:
-            raise ReadyVideoError("TRANSCRIPTION_FAILED", "WhisperX returned an unsupported transcription result.", details=str(type(result))) from exc
-    return result
+
+    segments, info = model.transcribe(str(speech_wav), **kwargs)
+    language = getattr(info, "language", None) or "unknown"
+    raw = {"segments": [_segment_to_dict(segment) for segment in segments]}
+    return normalize_whisperx(raw, duration, language)
+
+
+def _segment_to_dict(segment: Any) -> dict[str, Any]:
+    """Convert a faster-whisper segment into the Whisper-style dict that
+    ``normalize_whisperx`` consumes, applying the word-timing correction."""
+    words = []
+    for word in getattr(segment, "words", None) or []:
+        start = max(0.0, _finite_float(word.start, 0.0) + _WORD_START_CORRECTION_S)
+        end = max(start, _finite_float(word.end, 0.0) + _WORD_END_CORRECTION_S)
+        words.append({"word": word.word, "start": start, "end": end})
+    return {
+        "text": str(getattr(segment, "text", "")),
+        "start": _finite_float(getattr(segment, "start", 0.0), 0.0),
+        "end": _finite_float(getattr(segment, "end", 0.0), 0.0),
+        "words": words,
+    }
 
 
 def normalize_whisperx(raw: dict[str, Any], duration: float, language: str = "unknown") -> Transcript:
@@ -290,6 +295,6 @@ def create_transcript(speech_wav: Path, output_path: Path, *, fallback: str | No
         payload = {"engine": "empty-fallback", "segments": [], "words": []}
         atomic_write_json(output_path, payload)
         return payload
-    if importlib.util.find_spec("whisperx") is None:
-        raise TranscriptError("WhisperX is not installed")
-    raise TranscriptError("WhisperX execution is available through transcribe(), not create_transcript().")
+    if importlib.util.find_spec("faster_whisper") is None:
+        raise TranscriptError("faster-whisper is not installed")
+    raise TranscriptError("Transcription is available through transcribe(), not create_transcript().")

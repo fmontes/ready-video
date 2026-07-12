@@ -14,7 +14,7 @@ That's it — no config file, no manual FFmpeg install. The output lands in `./e
 
 Requires Python 3.11, 3.12, or 3.13.
 
-The transcription stack (WhisperX + PyTorch) is large — expect a multi-gigabyte download on first install. To keep the exact versions that are known to work together, install with [`uv`](https://docs.astral.sh/uv/) so the pinned `uv.lock` is honored:
+Transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — a lightweight, CPU-friendly Whisper backend (no PyTorch). The `transcription` extra is a modest download (roughly a couple hundred MB, plus the speech model on first run). Install with [`uv`](https://docs.astral.sh/uv/) so the pinned `uv.lock` is honored:
 
 ```bash
 git clone <repo-url> ready-video
@@ -36,7 +36,7 @@ The `transcription` extra pins compatible version ranges, but pip does not use `
 
 </details>
 
-The `transcription` extra provides WhisperX (speech-to-text + word alignment) and is **required** for subtitles — without it, `ready-video run` stops with an install hint rather than producing a subtitle-free video.
+The `transcription` extra provides faster-whisper (speech-to-text + word-level timestamps) and is **required** for subtitles — without it, `ready-video run` stops with an install hint rather than producing a subtitle-free video.
 
 Then verify your machine and let Ready Video fetch a managed FFmpeg if you don't have a compatible one:
 
@@ -68,7 +68,7 @@ ready-video run /path/to/talking-head.mp4 --review
 ready-video approve <job-id>                 # render using the reviewed config
 ```
 
-**First run** downloads WhisperX and alignment models (controlled by the WhisperX / Hugging Face / PyTorch stack, not by Ready Video). These can be large. Later runs reuse the cached models.
+**First run** downloads the Whisper speech model (via faster-whisper / Hugging Face, not controlled by Ready Video). Later runs reuse the cached model.
 
 ## Output And File Locations
 
@@ -83,7 +83,7 @@ Caches live in your platform directories. On macOS:
 ~/Library/Caches/ready-video/ffmpeg                     managed FFmpeg
 ```
 
-WhisperX model caches use their upstream defaults (commonly `~/.cache/huggingface`, `~/.cache/torch`). Point `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `TORCH_HOME`, or `XDG_CACHE_HOME` elsewhere if you need to.
+Speech-model caches use Hugging Face defaults (commonly `~/.cache/huggingface`). Point `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, or `XDG_CACHE_HOME` elsewhere if you need to.
 
 ## Configuration
 
@@ -119,7 +119,7 @@ ready-video doctor
 
 ## Privacy
 
-Ready Video runs entirely on your machine. It does not send your video, audio, or transcript to any network service. The only network activity is first-run downloads: the managed FFmpeg binaries and the WhisperX / alignment models (both cached and reused afterward). No API keys are read or required.
+Ready Video runs entirely on your machine. It does not send your video, audio, or transcript to any network service. The only network activity is first-run downloads: the managed FFmpeg binaries and the Whisper speech model (both cached and reused afterward). No API keys are read or required.
 
 ## FFmpeg Licensing
 
@@ -127,4 +127,4 @@ Ready Video is MIT-licensed, but FFmpeg is a separate project with separate lice
 
 ## Contributing
 
-Setting up a dev environment, the macOS torchcodec/FFmpeg note, project layout, and release readiness live in [CONTRIBUTING.md](CONTRIBUTING.md).
+Setting up a dev environment, the transcription-backend notes, project layout, and release readiness live in [CONTRIBUTING.md](CONTRIBUTING.md).

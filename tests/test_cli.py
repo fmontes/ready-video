@@ -20,8 +20,8 @@ def test_cli_help(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_cli_doctor_smoke_reports_missing_transcription(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     def missing_import(name: str) -> object:
-        if name == "whisperx":
-            raise ModuleNotFoundError("No module named 'whisperx'")
+        if name == "faster_whisper":
+            raise ModuleNotFoundError("No module named 'faster_whisper'")
         return object()
 
     monkeypatch.setattr(pipeline.importlib, "import_module", missing_import)
@@ -29,7 +29,7 @@ def test_cli_doctor_smoke_reports_missing_transcription(monkeypatch: pytest.Monk
     assert main(["doctor"]) == 1
     output = capsys.readouterr().out
     assert "doctor is available" in output
-    assert "FAIL    whisperx: import failed; install the transcription dependency" in output
+    assert "FAIL    faster-whisper: import failed; install the transcription dependency" in output
 
 
 def test_cli_doctor_reports_environment_details(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -69,6 +69,6 @@ def test_cli_doctor_reports_environment_details(monkeypatch: pytest.MonkeyPatch,
     assert "ffmpeg.resolution: source=environment provider=test-provider" in output
     assert "ffmpeg.capabilities: release=6.1-ready ffprobe_release=6.1-ready required_filters=ok required_encoders=ok" in output
     assert "ffmpeg.optional_encoders: available=h264_videotoolbox missing=h264_nvenc" in output
-    assert "whisperx: import ok (version 3.3.0)" in output
+    assert "faster-whisper: import ok (version 3.3.0)" in output
     assert f"path.edited: {config.paths.edited}" in output
     assert f"path.work: {config.paths.work}" in output

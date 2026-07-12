@@ -295,11 +295,11 @@ def doctor(*, install_missing: bool = False) -> int:
         checks.append(("ffmpeg", "fail", str(exc)))
 
     try:
-        importlib.import_module("whisperx")
+        importlib.import_module("faster_whisper")
 
-        checks.append(("whisperx", "pass", f"import ok ({_package_version('whisperx')})"))
+        checks.append(("faster-whisper", "pass", f"import ok ({_package_version('faster-whisper')})"))
     except Exception as exc:
-        checks.append(("whisperx", "fail", f"import failed; install the transcription dependency ({exc.__class__.__name__}: {exc})"))
+        checks.append(("faster-whisper", "fail", f"import failed; install the transcription dependency ({exc.__class__.__name__}: {exc})"))
 
     if config is not None:
         for name, path in {"edited": config.paths.edited, "work": config.paths.work}.items():

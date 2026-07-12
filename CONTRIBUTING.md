@@ -31,26 +31,13 @@ ready-video doctor --install-missing
 
 Tests find `src/` via `pythonpath` in `pyproject.toml`, so no install is required just to run them.
 
-## Dependency pinning (transcription stack)
+## Transcription backend
 
-The `transcription` extra pins the WhisperX/PyTorch stack to compatible ranges, and `uv.lock` captures the exact resolved versions. This is deliberate: `torch`, `torchaudio`, `torchvision`, and `torchcodec` are tightly coupled, and a `torch` minor bump can reintroduce the torchcodec/FFmpeg load failure documented below. The verified combo is torch 2.8.0 / torchcodec 0.7.0 / whisperx 3.8.6 (macOS arm64, Python 3.11).
+Transcription uses **faster-whisper** (a CTranslate2 Whisper backend) for both text and word-level timestamps — deliberately *not* WhisperX/PyTorch. faster-whisper keeps the install to a handful of light packages (`av`, `ctranslate2`, `onnxruntime`) instead of a multi-GB torch/pyannote/torchcodec stack, and avoids the torchcodec/FFmpeg shared-library fragility that plagued the WhisperX path.
 
-To update the stack: bump the ranges in `pyproject.toml`, run `uv lock`, install, run the suite, and — critically — do a real `ready-video run` on a clip to confirm transcription still works (the unit tests mock WhisperX, so they will not catch a torchcodec regression). Commit `pyproject.toml` and `uv.lock` together.
+The trade-off: faster-whisper's `word_timestamps` are decoder-derived rather than forced-aligned, and run slightly early (measured median ≈ 66ms). `transcript.py` corrects for this with `_WORD_START_CORRECTION_S` / `_WORD_END_CORRECTION_S`. If you swap models or bump faster-whisper and karaoke timing feels off, re-measure the bias against a reference clip and adjust those constants.
 
-## macOS: torchcodec / FFmpeg mismatch (optional, cosmetic)
-
-WhisperX's dependency `pyannote` tries to use `torchcodec`, which loads FFmpeg **4–7** shared libraries. If your system FFmpeg (e.g. Homebrew's) is version 8, torchcodec cannot load and prints a long `libtorchcodec` warning — then WhisperX **silently falls back to a working audio path**, so transcription still succeeds. The warning is harmless.
-
-To make torchcodec load and remove the warning, install the matching FFmpeg shared libs and expose them where torchcodec looks:
-
-```bash
-brew install ffmpeg@7    # provides libavutil.59 etc.; keg-only, does not replace your default ffmpeg
-for lib in libavutil.59 libavcodec.61 libavformat.61 libavdevice.61 libavfilter.10 libswscale.8 libswresample.5; do
-  ln -sf "$(brew --prefix ffmpeg@7)/lib/${lib}.dylib" "/opt/homebrew/lib/${lib}.dylib"
-done
-```
-
-The `libavdevice.61` symlink is required by torchcodec's build but collides with PyAV's bundled `libavdevice`, producing two harmless objc "Class implemented in both" warnings for AVFoundation capture classes this pipeline never uses. The step is entirely optional — the fallback path produces identical transcription results.
+The `transcription` extra pins `faster-whisper~=1.2`; `uv.lock` captures the exact resolved set. To update: bump `pyproject.toml`, run `uv lock`, then do a real `ready-video run` on a clip and spot-check subtitle timing (unit tests mock the backend, so they won't catch a timing regression). Commit `pyproject.toml` and `uv.lock` together.
 
 ## Project layout
 
@@ -62,7 +49,7 @@ src/ready_video/
   ffmpeg.py      binary resolution + managed download, capability checks
   media.py       probe, sound-based silence analysis, speech.wav
   timeline.py    edit-decision-list timeline; edited↔source mapping
-  transcript.py  WhisperX transcription + alignment, timing normalization
+  transcript.py  faster-whisper transcription, word-timing correction & normalization
   refine.py      transcript-driven second-pass silence trim
   subtitles.py   ASS generation, presets, SRT export
   renderer.py    filtergraph construction; single final encode
@@ -77,8 +64,8 @@ Read [CLAUDE.md](CLAUDE.md) before touching the pipeline — the timeline time-d
 This scaffold is useful for development and smoke testing, but it is not release-ready yet:
 
 - The managed FFmpeg manifest pins archive URLs and SHA-256 values for macOS Intel, macOS Apple Silicon, Linux x86-64, Linux ARM64, and Windows. Release still needs a legal/license review for those exact binaries and their FFmpeg configure flags. Ready Video's MIT license does not cover FFmpeg or its codec stack.
-- WhisperX lives behind the `transcription` extra; first-run model downloads are not wrapped in a polished installer or progress UI.
-- Real WhisperX transcription/alignment needs cross-platform smoke coverage with packaged installs and real model downloads.
+- faster-whisper lives behind the `transcription` extra; first-run model downloads are not wrapped in a polished installer or progress UI.
+- Real transcription needs cross-platform smoke coverage with packaged installs and real model downloads.
 - Cross-platform smoke tests with real media, hardware acceleration, and packaged installs are still required.
 - **PyPI name:** `https://pypi.org/pypi/ready-video/json` returned `404 Not Found` on 2026-07-11, so the distribution name appeared available then. Recheck immediately before release.
 

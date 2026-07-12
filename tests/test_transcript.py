@@ -4,7 +4,13 @@ import pytest
 
 from ready_video.errors import ReadyVideoError, TranscriptError
 from ready_video.config import Config
-from ready_video.transcript import _call_whisperx_transcribe, create_transcript, normalize_whisperx, transcribe
+from ready_video.transcript import (
+    _WORD_START_CORRECTION_S,
+    _segment_to_dict,
+    create_transcript,
+    normalize_whisperx,
+    transcribe,
+)
 
 
 def test_empty_transcript_fallback_writes_segments(tmp_path):
@@ -17,16 +23,19 @@ def test_empty_transcript_fallback_writes_segments(tmp_path):
     assert json.loads(output.read_text())["segments"] == []
 
 
-def test_missing_whisperx_fails_clearly(tmp_path, monkeypatch):
+def test_missing_transcription_backend_fails_clearly(tmp_path, monkeypatch):
     monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
 
-    with pytest.raises(TranscriptError, match="WhisperX is not installed"):
+    with pytest.raises(TranscriptError, match="faster-whisper is not installed"):
         create_transcript(tmp_path / "speech.wav", tmp_path / "transcript.json")
 
 
-def test_transcribe_requires_whisperx_in_pipeline(tmp_path, monkeypatch):
+def test_transcribe_reports_missing_backend_as_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr("ready_video.transcript.media_duration", lambda speech_wav, pair: 1.0)
-    monkeypatch.setattr("ready_video.transcript._transcribe_with_whisperx", lambda speech_wav, duration, config: (_ for _ in ()).throw(ImportError("no whisperx")))
+    monkeypatch.setattr(
+        "ready_video.transcript._transcribe_with_faster_whisper",
+        lambda speech_wav, duration, config: (_ for _ in ()).throw(ImportError("no faster_whisper")),
+    )
 
     with pytest.raises(ReadyVideoError) as error:
         transcribe(tmp_path / "speech.wav", tmp_path / "transcript.json", pair=object(), config=object())
@@ -35,27 +44,40 @@ def test_transcribe_requires_whisperx_in_pipeline(tmp_path, monkeypatch):
     assert not (tmp_path / "transcript.json").exists()
 
 
-def test_whisperx_transcribe_call_filters_kwargs_for_newer_api(tmp_path):
-    model = NewWhisperxModel()
-    config = Config().resolved()
-    config.transcription.language = "en"
+def test_segment_to_dict_applies_word_timing_correction():
+    # faster-whisper word starts run early; _segment_to_dict nudges them later.
+    class Word:
+        def __init__(self, word, start, end):
+            self.word, self.start, self.end = word, start, end
 
-    result = _call_whisperx_transcribe(model, tmp_path / "speech.wav", config)
+    class Segment:
+        text = "hola mundo"
+        start = 1.0
+        end = 2.0
+        words = [Word("hola", 1.00, 1.30), Word("mundo", 1.40, 1.90)]
 
-    assert result["language"] == "en"
-    assert model.calls == [("speech.wav", {"batch_size": 8, "language": "en"})]
+    result = _segment_to_dict(Segment())
+
+    assert result["words"][0]["start"] == pytest.approx(1.00 + _WORD_START_CORRECTION_S)
+    assert result["words"][1]["start"] == pytest.approx(1.40 + _WORD_START_CORRECTION_S)
+    # correction never pushes a start past its (also-corrected) end
+    assert result["words"][0]["end"] >= result["words"][0]["start"]
 
 
-def test_whisperx_transcribe_rejects_unsupported_initial_prompt(tmp_path):
-    model = NewWhisperxModel()
-    config = Config().resolved()
-    config.transcription.initial_prompt = "Names: Ready Video"
+def test_segment_to_dict_clamps_negative_starts_to_zero():
+    class Word:
+        def __init__(self, word, start, end):
+            self.word, self.start, self.end = word, start, end
 
-    with pytest.raises(ReadyVideoError) as error:
-        _call_whisperx_transcribe(model, tmp_path / "speech.wav", config)
+    class Segment:
+        text = "x"
+        start = 0.0
+        end = 0.1
+        words = [Word("x", 0.0, 0.05)]
 
-    assert error.value.code == "TRANSCRIPTION_FAILED"
-    assert "initial_prompt" in error.value.message
+    result = _segment_to_dict(Segment())
+
+    assert result["words"][0]["start"] >= 0.0
 
 
 def test_normalize_preserves_tokens_and_marks_interpolated_gaps():
@@ -97,17 +119,6 @@ def test_normalize_preserves_tokens_and_marks_interpolated_gaps():
     assert transcript.words[3].end == pytest.approx(18.0)
     assert transcript.words[5].start == pytest.approx(19.0)
     assert transcript.words[5].end == pytest.approx(20.0)
-
-
-class NewWhisperxModel:
-    def __init__(self):
-        self.calls = []
-
-    def transcribe(self, audio, batch_size=None, language=None):
-        from pathlib import Path
-
-        self.calls.append((Path(audio).name, {"batch_size": batch_size, "language": language}))
-        return {"language": language, "segments": []}
 
 
 def test_normalize_keeps_textual_tokens_when_empty_items_are_skipped():

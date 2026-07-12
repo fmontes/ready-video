@@ -64,7 +64,7 @@ SUBTITLE_PRESETS: dict[str, dict[str, Any]] = {
 CONFIG_COMMENTS = {
     "paths": "Output location. Relative paths are resolved from the current working directory.",
     "silence": "Silence analysis settings used to build the canonical edit timeline.",
-    "transcription": "WhisperX model selection. auto chooses a practical model/device/compute type.",
+    "transcription": "faster-whisper model selection. auto chooses a practical model/device/compute type.",
     "subtitles": "Burned subtitle settings. null values inherit from the selected preset.",
     "render": "Final render settings. Output frame rate and pixel format are fixed internally.",
 }
