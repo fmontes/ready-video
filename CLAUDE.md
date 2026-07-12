@@ -26,7 +26,7 @@ The renderer (`renderer.py`) splits the edited timeline at every kept-segment bo
 
 ## Conventions & invariants
 
-- **Never mutate the `run` input.** The source passed to `ready-video run` is never edited/moved/deleted, even on failure. Inbox files follow the claim→archive/failed lifecycle instead.
+- **Never mutate the `run` input.** The source passed to `ready-video run` is never edited/moved/deleted, even on failure.
 - **Atomic artifacts.** Write to a temp path and rename (`io.atomic_write_*`). A completed stage artifact is never modified in place; re-running a stage replaces only that artifact.
 - **Errors** are `ReadyVideoError(code, message, remediation?, details?)` with stable UPPERCASE codes (e.g. `NO_SPEECH_DETECTED`, `TIMELINE_MAPPING_FAILED`, `UNSUPPORTED_HDR`, `RENDER_FAILED`). Add a code rather than raising bare exceptions in pipeline code.
 - **No shell strings.** Build FFmpeg argument arrays and run without a shell (`shell=False`). Never interpolate paths into a command string.

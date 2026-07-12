@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import generate_default_config_yaml, user_config_path
 from .errors import ReadyVideoError
-from .pipeline import approve, doctor, inbox, run_file
+from .pipeline import approve, doctor, run_file
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,8 +18,6 @@ def main(argv: list[str] | None = None) -> int:
             output = run_file(Path(args.file), config_path=args.config, review=args.review, cli_overrides=overrides)
             print(output)
             return 0
-        if args.command == "inbox":
-            return inbox(config_path=args.config, cli_overrides=overrides)
         if args.command == "approve":
             print(approve(args.job_id, config_path=args.config))
             return 0
@@ -49,8 +47,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("file")
     run.add_argument("--review", action="store_true")
     _add_common(run, suppress_defaults=True)
-    inbox_parser = sub.add_parser("inbox")
-    _add_common(inbox_parser, suppress_defaults=True)
     approve_parser = sub.add_parser("approve")
     approve_parser.add_argument("job_id")
     init = sub.add_parser("init")

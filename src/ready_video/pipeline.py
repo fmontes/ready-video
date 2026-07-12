@@ -6,7 +6,6 @@ from importlib import metadata
 import json
 import os
 import shutil
-import time
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +36,9 @@ def run_file(
     input_path = input_path.resolve()
     if not input_path.is_file():
         raise ReadyVideoError("INVALID_MEDIA", f"Input file does not exist: {input_path}")
-    sidecar = input_path.with_name(input_path.name + ".yaml")
-    config = load_config(config_path=config_path, sidecar_path=sidecar if sidecar.exists() else None, cli_overrides=cli_overrides)
+    config = load_config(config_path=config_path, cli_overrides=cli_overrides)
     pair = resolve_binaries()
-    ensure_dirs(config.paths.work, config.paths.edited, config.paths.archive, config.paths.failed, config.paths.inbox)
+    ensure_dirs(config.paths.work, config.paths.edited)
     content_hash = file_sha256(input_path)
     cfg_hash = config_sha256(config)
     full_job_hash = job_sha256(content_hash, cfg_hash, PIPELINE_VERSION)
@@ -202,7 +200,7 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
         raise ReadyVideoError("INVALID_MEDIA", f"Reviewed job {job_id_value} is missing artifacts: {', '.join(missing)}.")
 
     pair = resolve_binaries()
-    ensure_dirs(config.paths.edited, config.paths.archive, config.paths.failed)
+    ensure_dirs(config.paths.edited)
     source = SourceInfo.model_validate(json.loads(source_path.read_text()))
     timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
     ass_path = work_dir / "subs.ass"
@@ -231,90 +229,6 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
-
-
-def inbox(*, config_path: Path | None = None, cli_overrides: dict | None = None) -> int:
-    config = load_config(config_path=config_path, cli_overrides=cli_overrides)
-    ensure_dirs(config.paths.inbox, config.paths.inbox / ".processing", config.paths.archive, config.paths.failed)
-    lock_path = config.paths.inbox / ".ready-video.lock"
-    try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        print("inbox processing already active")
-        return 0
-    os.write(fd, f"pid={os.getpid()}\n".encode())
-    processed = skipped = failed = 0
-    try:
-        for media in sorted(config.paths.inbox.iterdir()):
-            if not _eligible(media, config):
-                continue
-            sidecar = media.with_name(media.name + ".yaml")
-            if not _stable(media, config) or (sidecar.exists() and not _stable(sidecar, config)):
-                skipped += 1
-                continue
-            claimed = config.paths.inbox / ".processing" / media.name
-            claimed_sidecar = claimed.with_name(claimed.name + ".yaml")
-            try:
-                claimed, claimed_sidecar = _claim_inbox_item(media, claimed, sidecar, claimed_sidecar)
-                output = run_file(claimed, config_path=config_path, cli_overrides=cli_overrides)
-                archive_dir = config.paths.archive / output.stem.rsplit("_", 1)[-1]
-                _archive_success(claimed, claimed_sidecar, archive_dir, delete_original=config.inbox_processing.delete_original_on_success)
-                processed += 1
-            except Exception as exc:
-                failed += 1
-                fail_dir = config.paths.failed / claimed.stem
-                _preserve_failure(claimed, claimed_sidecar, fail_dir, exc)
-        print(f"processed={processed} skipped={skipped} failed={failed}")
-        return 1 if failed else 0
-    finally:
-        os.close(fd)
-        lock_path.unlink(missing_ok=True)
-
-
-def _eligible(path: Path, config: ResolvedConfig) -> bool:
-    if not path.is_file() or path.name.startswith("."):
-        return False
-    if path.suffix.lower().lstrip(".") not in config.inbox_processing.extensions:
-        return False
-    if path.name.endswith((".part", ".tmp", ".download")):
-        return False
-    return True
-
-
-def _stable(path: Path, config: ResolvedConfig, *, now: float | None = None) -> bool:
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return False
-    if not path.is_file() or stat.st_size <= 0:
-        return False
-    return (time.time() if now is None else now) - stat.st_mtime >= config.inbox_processing.stability_seconds
-
-
-def _claim_inbox_item(media: Path, claimed: Path, sidecar: Path, claimed_sidecar: Path) -> tuple[Path, Path]:
-    media.replace(claimed)
-    if sidecar.exists():
-        sidecar.replace(claimed_sidecar)
-    return claimed, claimed_sidecar
-
-
-def _archive_success(claimed: Path, claimed_sidecar: Path, archive_dir: Path, *, delete_original: bool) -> None:
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    if delete_original:
-        claimed.unlink(missing_ok=True)
-    elif claimed.exists():
-        claimed.replace(archive_dir / claimed.name)
-    if claimed_sidecar.exists():
-        claimed_sidecar.replace(archive_dir / claimed_sidecar.name)
-
-
-def _preserve_failure(claimed: Path, claimed_sidecar: Path, fail_dir: Path, exc: Exception) -> None:
-    fail_dir.mkdir(parents=True, exist_ok=True)
-    if claimed.exists():
-        claimed.replace(fail_dir / claimed.name)
-    if claimed_sidecar.exists():
-        claimed_sidecar.replace(fail_dir / claimed_sidecar.name)
-    atomic_write_text(fail_dir / "error.log", str(exc) + "\n")
 
 
 def _review_work_dir(job_id_value: str, *, config_path: Path | None = None) -> Path:
@@ -388,10 +302,9 @@ def doctor(*, install_missing: bool = False) -> int:
         checks.append(("whisperx", "fail", f"import failed; install the transcription dependency ({exc.__class__.__name__}: {exc})"))
 
     if config is not None:
-        for name, path in config.paths.model_dump().items():
+        for name, path in {"edited": config.paths.edited, "work": config.paths.work}.items():
             status, detail = _path_status(Path(path))
             checks.append((f"path.{name}", status, detail))
-        checks.append(("inbox.lock", *_inbox_lock_status(config.paths.inbox / ".ready-video.lock")))
 
     for name, status, detail in checks:
         print(f"{status.upper():7} {name}: {detail}")
@@ -505,17 +418,6 @@ def _format_bytes(value: int) -> str:
             return f"{amount:.1f}{unit}" if unit != "B" else f"{int(amount)}B"
         amount /= 1024
     return f"{value}B"
-
-
-def _inbox_lock_status(lock_path: Path) -> tuple[str, str]:
-    absolute = lock_path.expanduser().resolve(strict=False)
-    if not absolute.exists():
-        return "pass", f"absent ({absolute})"
-    try:
-        content = absolute.read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        return "warning", f"present ({absolute}); unreadable ({exc})"
-    return "warning", f"present ({absolute}); {content or 'empty'}"
 
 
 def _write_review_artifacts(

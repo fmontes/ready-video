@@ -38,14 +38,10 @@ def test_cli_doctor_reports_environment_details(monkeypatch: pytest.MonkeyPatch,
     pair = BinaryPair(ffmpeg_path, ffprobe_path, "environment", provider="test-provider", cache_dir=tmp_path / "cache")
     config = Config(
         paths=PathsConfig(
-            inbox=tmp_path / "inbox",
-            archive=tmp_path / "archive",
             work=tmp_path / "work",
             edited=tmp_path / "edited",
-            failed=tmp_path / "failed",
         )
     ).resolved()
-    lock_path = config.paths.inbox / ".ready-video.lock"
 
     def fake_capability_report(binary_pair: BinaryPair) -> CapabilityReport:
         assert binary_pair == pair
@@ -74,5 +70,5 @@ def test_cli_doctor_reports_environment_details(monkeypatch: pytest.MonkeyPatch,
     assert "ffmpeg.capabilities: release=6.1-ready ffprobe_release=6.1-ready required_filters=ok required_encoders=ok" in output
     assert "ffmpeg.optional_encoders: available=h264_videotoolbox missing=h264_nvenc" in output
     assert "whisperx: import ok (version 3.3.0)" in output
-    assert f"path.inbox: {config.paths.inbox}" in output
-    assert f"inbox.lock: absent ({lock_path}" in output
+    assert f"path.edited: {config.paths.edited}" in output
+    assert f"path.work: {config.paths.work}" in output

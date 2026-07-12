@@ -57,9 +57,6 @@ def test_review_writes_artifact_manifest(monkeypatch, tmp_path: Path) -> None:
             "paths": {
                 "work": tmp_path / "work",
                 "edited": tmp_path / "edited",
-                "archive": tmp_path / "archive",
-                "failed": tmp_path / "failed",
-                "inbox": tmp_path / "inbox",
             },
         },
     )
@@ -121,9 +118,6 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
             "paths": {
                 "work": tmp_path / "work",
                 "edited": ambient_edited,
-                "archive": tmp_path / "ambient-archive",
-                "failed": tmp_path / "ambient-failed",
-                "inbox": tmp_path / "ambient-inbox",
             },
         },
     )
@@ -132,9 +126,6 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
             "paths": {
                 "work": tmp_path / "work",
                 "edited": captured_edited,
-                "archive": tmp_path / "captured-archive",
-                "failed": tmp_path / "captured-failed",
-                "inbox": tmp_path / "captured-inbox",
             },
         }
     ).resolved()

@@ -32,12 +32,9 @@ ENV/
 htmlcov/
 coverage.xml
 
-# Ready Video runtime directories (generated per run; never committed)
-inbox/
-archive/
+# Ready Video local output and config (generated; never committed)
 edited/
-failed/
-work/
+config.yaml
 
 # Editor / OS
 .idea/

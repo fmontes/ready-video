@@ -11,11 +11,8 @@ from ready_video.config import ReadyVideoConfig, generate_default_config_yaml, l
 def test_config_defaults_match_v1_contract():
     config = ReadyVideoConfig()
 
-    assert str(config.paths.inbox) == "inbox"
-    assert str(config.paths.archive) == "archive"
-    assert str(config.paths.work) == "work"
     assert str(config.paths.edited) == "edited"
-    assert str(config.paths.failed) == "failed"
+    assert config.paths.work.name == "work"  # internal, under the platform cache dir
     assert config.silence.enabled is True
     assert config.silence.threshold_db == -35
     assert config.silence.min_duration == 0.45
@@ -33,8 +30,6 @@ def test_config_defaults_match_v1_contract():
     assert config.render.audio_offset == 0
     assert config.render.video_offset == 0
     assert config.render.hwaccel == "none"
-    assert config.inbox.stability_seconds == 8
-    assert config.inbox.extensions == ["mp4", "mov", "mkv", "webm"]
 
 
 def test_config_rejects_unknown_keys():
@@ -65,21 +60,19 @@ def test_generated_config_round_trips_to_resolved_defaults(tmp_path):
     assert "# Ready Video configuration" in path.read_text()
 
 
-def test_layer_precedence_user_project_sidecar_env_cli(monkeypatch, tmp_path):
+def test_layer_precedence_user_project_env_cli(monkeypatch, tmp_path):
     user_path = tmp_path / "user.yaml"
     project_path = tmp_path / "project.yaml"
-    sidecar_path = tmp_path / "clip.mp4.yaml"
     user_path.write_text(yaml.safe_dump({"render": {"aspect": "16:9", "crf": 30}}))
-    project_path.write_text(yaml.safe_dump({"render": {"aspect": "1:1"}}))
-    sidecar_path.write_text(yaml.safe_dump({"render": {"crf": 22}}))
+    project_path.write_text(yaml.safe_dump({"render": {"aspect": "1:1", "crf": 22}}))
     monkeypatch.setattr(config_module, "user_config_path", lambda: user_path)
     monkeypatch.setattr(config_module, "project_config_path", lambda cwd=None: project_path)
     monkeypatch.setenv("READY_VIDEO_RENDER__CRF", "24")
 
-    config = load_config(sidecar_path=sidecar_path, cli_overrides={"render": {"aspect": "9:16"}}, cwd=tmp_path)
+    config = load_config(cli_overrides={"render": {"aspect": "9:16"}}, cwd=tmp_path)
 
-    assert config.render.aspect == "9:16"
-    assert config.render.crf == 24
+    assert config.render.aspect == "9:16"  # CLI wins over project's 1:1 and user's 16:9
+    assert config.render.crf == 24  # env wins over project's 22 and user's 30
 
 
 def test_env_aliases_are_normalized(monkeypatch):

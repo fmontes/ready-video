@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
-from platformdirs import user_config_dir
+from platformdirs import user_cache_dir, user_config_dir
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .errors import ReadyVideoError, invalid_config
@@ -62,12 +62,11 @@ SUBTITLE_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 CONFIG_COMMENTS = {
-    "paths": "Runtime directories. Relative paths are resolved from the current working directory.",
+    "paths": "Output location. Relative paths are resolved from the current working directory.",
     "silence": "Silence analysis settings used to build the canonical edit timeline.",
     "transcription": "WhisperX model selection. auto chooses a practical model/device/compute type.",
     "subtitles": "Burned subtitle settings. null values inherit from the selected preset.",
     "render": "Final render settings. Output frame rate and pixel format are fixed internally.",
-    "inbox_processing": "One-shot inbox claiming and lifecycle settings.",
 }
 
 
@@ -75,12 +74,15 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
+def _default_work_dir() -> Path:
+    return Path(user_cache_dir("ready-video", "ready-video")) / "work"
+
+
 class PathsConfig(StrictModel):
-    inbox: Path = Path("./inbox")
-    archive: Path = Path("./archive")
-    work: Path = Path("./work")
     edited: Path = Path("./edited")
-    failed: Path = Path("./failed")
+    # Internal scratch for per-job artifacts. Defaults under the platform cache
+    # dir and is intentionally undocumented; overridable for tests/advanced use.
+    work: Path = Field(default_factory=_default_work_dir)
 
 
 class SilenceConfig(StrictModel):
@@ -241,27 +243,12 @@ class RenderConfig(StrictModel):
         return self
 
 
-class InboxProcessingConfig(StrictModel):
-    stability_seconds: int = 8
-    extensions: list[str] = Field(default_factory=lambda: ["mp4", "mov", "mkv", "webm"])
-    delete_original_on_success: bool = False
-
-    @property
-    def stability(self) -> int:
-        return self.stability_seconds
-
-
 class Config(StrictModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     silence: SilenceConfig = Field(default_factory=SilenceConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     subtitles: SubtitleConfig = Field(default_factory=SubtitleConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
-    inbox_processing: InboxProcessingConfig = Field(default_factory=InboxProcessingConfig)
-
-    @property
-    def inbox(self) -> InboxProcessingConfig:
-        return self.inbox_processing
 
     def resolved(self) -> "ResolvedConfig":
         data = self.model_dump()
@@ -378,8 +365,6 @@ def _normalize_aliases(data: Mapping[str, Any]) -> dict[str, Any]:
         if "video_offset" in render and "crop_y_offset" not in render:
             render["crop_y_offset"] = render.pop("video_offset")
         normalized["render"] = render
-    if "inbox" in normalized and "inbox_processing" not in normalized:
-        normalized["inbox_processing"] = normalized.pop("inbox")
     return normalized
 
 
@@ -428,7 +413,6 @@ def load_config(
     *,
     path: Path | None = None,
     config_path: Path | None = None,
-    sidecar_path: Path | None = None,
     cli_overrides: Mapping[str, Any] | None = None,
     cwd: Path | None = None,
 ) -> ResolvedConfig:
@@ -448,8 +432,6 @@ def load_config(
     for candidate in [user_config_path(), project_config_path(cwd)]:
         if candidate.is_file():
             data = deep_merge(data, load_yaml_file(candidate))
-    if sidecar_path and sidecar_path.is_file():
-        data = deep_merge(data, load_yaml_file(sidecar_path))
     data = deep_merge(data, env_overrides())
     if config_path:
         data = deep_merge(data, load_yaml_file(config_path))
@@ -470,6 +452,8 @@ def config_to_yaml(config: BaseModel) -> str:
 
 def generate_default_config_yaml() -> str:
     data = json.loads(Config().model_dump_json())
+    # `paths.work` is an internal scratch location; keep it out of the template.
+    data.get("paths", {}).pop("work", None)
     lines = [
         "# Ready Video configuration",
         "# All settings are optional; deleting this file restores built-in defaults.",

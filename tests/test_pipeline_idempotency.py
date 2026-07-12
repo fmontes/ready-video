@@ -40,9 +40,6 @@ def _config(tmp_path: Path):
     config = Config().resolved()
     config.paths.edited = tmp_path / "edited"
     config.paths.work = tmp_path / "work"
-    config.paths.archive = tmp_path / "archive"
-    config.paths.failed = tmp_path / "failed"
-    config.paths.inbox = tmp_path / "inbox"
     return config
 
 

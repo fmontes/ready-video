@@ -58,17 +58,9 @@ ready-video approve <job-id>                 # render using the reviewed config
 
 ## Output And File Locations
 
-Runtime directories are created relative to the directory you run the command in, and are configurable:
+Finished videos land in `./edited` by default (configurable via `paths.edited`). Each render is `./edited/<stem>_<job-id>.mp4` with an adjacent JSON manifest. Re-running the same input with the same config is a no-op — the existing output is reused.
 
-```text
-./edited   final renders and their JSON manifests
-./work     per-job intermediate artifacts and review pages
-./inbox    files waiting for one-shot inbox processing
-./archive  successfully processed inbox originals
-./failed   failed inbox originals and error logs
-```
-
-Each render is `./edited/<stem>_<job-id>.mp4` with an adjacent manifest. Re-running the same input with the same config is a no-op (the existing output is reused).
+Intermediate per-job artifacts (timeline, transcript, subtitles, review pages) live in an internal work directory under your platform cache and are not something you normally touch.
 
 Caches live in your platform directories. On macOS:
 
@@ -92,17 +84,15 @@ Settings are merged from these sources, later ones winning:
 
 1. User config
 2. `./config.yaml` in the current project
-3. Per-input sidecar named like `clip.mp4.yaml`
-4. Environment variables
-5. `--config <path>`
-6. CLI flags (`--preset`, `--language`, `--aspect`)
+3. Environment variables
+4. `--config <path>`
+5. CLI flags (`--preset`, `--language`, `--aspect`)
 
 Any setting can be set via `READY_VIDEO_` plus section and key, separated by double underscores (values are parsed as YAML):
 
 ```bash
 READY_VIDEO_RENDER__ASPECT=1:1 ready-video run clip.mp4
 READY_VIDEO_SUBTITLES__PRESET=clean ready-video run clip.mp4
-READY_VIDEO_INBOX_PROCESSING__STABILITY_SECONDS=20 ready-video inbox
 ```
 
 To point at a specific FFmpeg, set both binaries together:
@@ -116,98 +106,6 @@ ready-video doctor
 ## Privacy
 
 Ready Video runs entirely on your machine. It does not send your video, audio, or transcript to any network service. The only network activity is first-run downloads: the managed FFmpeg binaries and the WhisperX / alignment models (both cached and reused afterward). No API keys are read or required.
-
-## Inbox Processing
-
-`ready-video inbox` is a one-shot command: it claims stable files from `./inbox`, processes each, archives successful originals, and preserves failures with an `error.log`. It is not a daemon — pair it with your OS scheduler to process files as they arrive.
-
-Eligible extensions default to `mp4`, `mov`, `mkv`, `webm`. A file must be unchanged for `inbox_processing.stability_seconds` before it is claimed.
-
-<details>
-<summary><strong>macOS — launchd (run every minute)</strong></summary>
-
-`~/Library/LaunchAgents/video.ready.inbox.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>video.ready.inbox</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/YOU/Developer/ready-video/.venv/bin/ready-video</string>
-    <string>inbox</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>/Users/YOU/ReadyVideoJobs</string>
-  <key>StartInterval</key>
-  <integer>60</integer>
-  <key>StandardOutPath</key>
-  <string>/Users/YOU/Library/Logs/ready-video-inbox.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/YOU/Library/Logs/ready-video-inbox.err</string>
-</dict>
-</plist>
-```
-
-```bash
-launchctl load ~/Library/LaunchAgents/video.ready.inbox.plist
-```
-
-</details>
-
-<details>
-<summary><strong>Linux — systemd user timer</strong></summary>
-
-`~/.config/systemd/user/ready-video-inbox.service`:
-
-```ini
-[Unit]
-Description=Ready Video inbox pass
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/YOU/ReadyVideoJobs
-ExecStart=/home/YOU/ready-video/.venv/bin/ready-video inbox
-```
-
-`~/.config/systemd/user/ready-video-inbox.timer`:
-
-```ini
-[Unit]
-Description=Run Ready Video inbox every minute
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=1min
-Unit=ready-video-inbox.service
-
-[Install]
-WantedBy=timers.target
-```
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now ready-video-inbox.timer
-```
-
-</details>
-
-<details>
-<summary><strong>Windows — Task Scheduler</strong></summary>
-
-```powershell
-schtasks /Create /TN "Ready Video Inbox" /SC MINUTE /MO 1 `
-  /TR "C:\Users\YOU\ready-video\.venv\Scripts\ready-video.exe inbox" `
-  /ST 00:00
-```
-
-Set the task's "Start in" directory to the folder containing your `config.yaml`, `inbox`, `work`, `edited`, `archive`, and `failed` directories.
-
-</details>
 
 ## FFmpeg Licensing
 
