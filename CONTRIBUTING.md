@@ -25,11 +25,17 @@ ready-video doctor --install-missing
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest -q          # full suite (~85 tests, seconds)
+.venv/bin/python -m pytest -q          # full suite (~65 tests, seconds)
 .venv/bin/python -m pytest tests/test_renderer.py -q   # one module
 ```
 
 Tests find `src/` via `pythonpath` in `pyproject.toml`, so no install is required just to run them.
+
+## Dependency pinning (transcription stack)
+
+The `transcription` extra pins the WhisperX/PyTorch stack to compatible ranges, and `uv.lock` captures the exact resolved versions. This is deliberate: `torch`, `torchaudio`, `torchvision`, and `torchcodec` are tightly coupled, and a `torch` minor bump can reintroduce the torchcodec/FFmpeg load failure documented below. The verified combo is torch 2.8.0 / torchcodec 0.7.0 / whisperx 3.8.6 (macOS arm64, Python 3.11).
+
+To update the stack: bump the ranges in `pyproject.toml`, run `uv lock`, install, run the suite, and — critically — do a real `ready-video run` on a clip to confirm transcription still works (the unit tests mock WhisperX, so they will not catch a torchcodec regression). Commit `pyproject.toml` and `uv.lock` together.
 
 ## macOS: torchcodec / FFmpeg mismatch (optional, cosmetic)
 

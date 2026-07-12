@@ -14,15 +14,29 @@ That's it — no config file, no manual FFmpeg install. The output lands in `./e
 
 Requires Python 3.11, 3.12, or 3.13.
 
+The transcription stack (WhisperX + PyTorch) is large — expect a multi-gigabyte download on first install. To keep the exact versions that are known to work together, install with [`uv`](https://docs.astral.sh/uv/) so the pinned `uv.lock` is honored:
+
 ```bash
 git clone <repo-url> ready-video
 cd ready-video
-python -m venv .venv
-source .venv/bin/activate
+uv sync --extra transcription
+```
+
+That creates a `.venv` with the locked dependency set. Run the tool with `uv run ready-video ...`, or activate the venv (`source .venv/bin/activate`) and call `ready-video` directly.
+
+<details>
+<summary>Plain pip (no uv)</summary>
+
+```bash
+python -m venv .venv && source .venv/bin/activate
 pip install ".[transcription]"
 ```
 
-The `transcription` extra pulls in WhisperX, which does speech-to-text and word alignment. It is required for subtitles; without it, `ready-video run` stops with an install hint rather than producing a subtitle-free video.
+The `transcription` extra pins compatible version ranges, but pip does not use `uv.lock`, so resolution can still drift. `uv` is recommended for a reproducible install.
+
+</details>
+
+The `transcription` extra provides WhisperX (speech-to-text + word alignment) and is **required** for subtitles — without it, `ready-video run` stops with an install hint rather than producing a subtitle-free video.
 
 Then verify your machine and let Ready Video fetch a managed FFmpeg if you don't have a compatible one:
 

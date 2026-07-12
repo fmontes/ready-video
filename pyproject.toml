@@ -32,7 +32,20 @@ Repository = "https://github.com/fmontes/ready-video"
 Issues = "https://github.com/fmontes/ready-video/issues"
 
 [project.optional-dependencies]
-transcription = ["whisperx>=3.3"]
+# Verified working combo (macOS arm64, Python 3.11): torch 2.8.0 / torchcodec
+# 0.7.0 / whisperx 3.8.6. torch, torchcodec, torchaudio, and torchvision are
+# tightly coupled and pinned to patch-level so a torch minor bump can't
+# reintroduce the torchcodec/FFmpeg load failure. See CONTRIBUTING.md.
+transcription = [
+  "whisperx~=3.8",
+  "torch~=2.8.0",
+  "torchaudio~=2.8.0",
+  "torchvision~=0.23.0",
+  "torchcodec~=0.7.0",
+  "ctranslate2~=4.8",
+  "transformers~=4.57",
+  "numpy~=2.4",
+]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
