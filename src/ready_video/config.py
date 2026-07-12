@@ -92,6 +92,12 @@ class SilenceConfig(StrictModel):
     min_silence_s: float = 0.45
     margin_before_s: float = 0.12
     margin_after_s: float = 0.18
+    # Transcript-driven second pass: after sound-based silence removal, compress
+    # pauses BETWEEN spoken words that survived the dB threshold (quiet room tone,
+    # breath). Cuts only across aligned word boundaries, never clipping speech.
+    transcript_trim: bool = True
+    transcript_trim_max_gap_s: float = 0.35
+    transcript_trim_word_margin_s: float = 0.08
 
     @property
     def threshold(self) -> float:
@@ -119,6 +125,10 @@ class SilenceConfig(StrictModel):
             raise ValueError("min_silence_s must be positive")
         if self.margin_before_s < 0 or self.margin_after_s < 0:
             raise ValueError("silence margins must be nonnegative")
+        if self.transcript_trim_max_gap_s < 0:
+            raise ValueError("transcript_trim_max_gap_s must be nonnegative")
+        if self.transcript_trim_word_margin_s < 0:
+            raise ValueError("transcript_trim_word_margin_s must be nonnegative")
         return self
 
 

@@ -1,110 +1,113 @@
 # Ready Video
 
-Ready Video turns a talking-head clip into a social-media-ready video from the command line. It trims silence, transcribes speech, burns subtitles, adds validated punch-in zooms, normalizes audio, and writes a deterministic render plus review artifacts.
-
-This repository is still an implementation scaffold for the v1 specification, not a release build. See [Release Readiness](#release-readiness) before packaging or distributing it.
-
-## 60-Second Quickstart
-
-Use Python 3.11, 3.12, or 3.13. The transcription stack currently depends on PyTorch wheels that are not available for Python 3.14 in this environment.
+Ready Video turns a talking-head clip into a social-media-ready video from the command line. It trims silence, transcribes speech, burns word-level subtitles, adds validated punch-in zooms, normalizes audio, and writes a deterministic vertical render.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[transcription,dev]"
-
-ready-video doctor --install-missing
-ready-video run /path/to/talking-head.mp4 --no-agent
+ready-video run talking-head.mp4
 ```
 
-Outputs land in `./edited` by default. Working artifacts for the same job land in `./work/<job-id>`, including `resolved-config.yaml`, `source.json`, `timeline.json`, `transcript.json`, `zooms.json`, and subtitle files.
+That's it — no config file, no manual FFmpeg install. The output lands in `./edited`.
 
-For a review pass instead of a final render:
+> **Status:** Ready Video is not yet on PyPI, so install is from source for now (see below). Working toward a `pip install ready-video` release — track what's left in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Install
+
+Requires Python 3.11, 3.12, or 3.13.
 
 ```bash
-ready-video run /path/to/talking-head.mp4 --review --no-agent
-ready-video edit-zooms <job-id>
-ready-video approve <job-id>
+git clone <repo-url> ready-video
+cd ready-video
+python -m venv .venv
+source .venv/bin/activate
+pip install ".[transcription]"
+```
+
+The `transcription` extra pulls in WhisperX, which does speech-to-text and word alignment. It is required for subtitles; without it, `ready-video run` stops with an install hint rather than producing a subtitle-free video.
+
+Then verify your machine and let Ready Video fetch a managed FFmpeg if you don't have a compatible one:
+
+```bash
+ready-video doctor --install-missing
+```
+
+You do not need to install FFmpeg yourself. If no compatible FFmpeg/ffprobe pair is on your `PATH`, Ready Video downloads a checksum-verified managed pair into your user cache.
+
+## Quickstart
+
+Render a clip to a vertical (9:16) video:
+
+```bash
+ready-video run /path/to/talking-head.mp4
 ```
 
 Common one-off overrides:
 
 ```bash
 ready-video run clip.mp4 --preset clean --language en --aspect 9:16
-ready-video run clip.mp4 --preset minimal --aspect 1:1 --no-agent
+ready-video run clip.mp4 --preset minimal --aspect 1:1
+ready-video run clip.mp4 --no-agent          # skip zoom suggestions
 ```
 
-## First Run Notes
-
-`ready-video doctor --install-missing` checks FFmpeg, ffprobe, WhisperX, and supported local agent CLIs. If no compatible system FFmpeg pair is available, the managed FFmpeg provider downloads a manifest-pinned archive, verifies the archive checksum, extracts it defensively, verifies the executable checksums, and installs it into the user cache.
-
-Real transcription requires the optional `transcription` dependency:
+Review before committing to a final render — this writes a preview and a report you can inspect, tweak, then approve:
 
 ```bash
-python -m pip install -e ".[transcription]"
+ready-video run /path/to/talking-head.mp4 --review
+ready-video edit-zooms <job-id>              # optional: hand-edit the zooms
+ready-video approve <job-id>                 # render using the reviewed config
 ```
 
-The first real transcription can download WhisperX and alignment models. Those downloads may be large and are controlled by the WhisperX/Hugging Face/PyTorch stack, not by Ready Video. If WhisperX is not installed, `ready-video doctor` and `ready-video run` fail with an installation hint instead of producing subtitle-free output.
+**First run** downloads WhisperX and alignment models (controlled by the WhisperX / Hugging Face / PyTorch stack, not by Ready Video). These can be large. Later runs reuse the cached models.
 
-## Cache And File Locations
+## Output And File Locations
 
-Ready Video's runtime directories are configurable. Defaults are relative to the directory where you run the command:
+Runtime directories are created relative to the directory you run the command in, and are configurable:
 
 ```text
-./inbox    files waiting for one-shot inbox processing
+./edited   final renders and their JSON manifests
 ./work     per-job intermediate artifacts and review pages
-./edited   final renders and render manifests
+./inbox    files waiting for one-shot inbox processing
 ./archive  successfully processed inbox originals
 ./failed   failed inbox originals and error logs
 ```
 
-User config lives in the platform config directory. On macOS this is:
+Each render is `./edited/<stem>_<job-id>.mp4` with an adjacent manifest. Re-running the same input with the same config is a no-op (the existing output is reused).
+
+Caches live in your platform directories. On macOS:
 
 ```text
-~/Library/Application Support/ready-video/config.yaml
+~/Library/Application Support/ready-video/config.yaml   user config
+~/Library/Caches/ready-video/ffmpeg                     managed FFmpeg
 ```
 
-The managed FFmpeg cache lives in the platform cache directory. On macOS this is:
-
-```text
-~/Library/Caches/ready-video/ffmpeg
-```
-
-WhisperX/model caches use their upstream defaults, commonly under Hugging Face and PyTorch cache directories such as `~/.cache/huggingface` and `~/.cache/torch` on Linux-like systems. Set upstream variables such as `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `TORCH_HOME`, or `XDG_CACHE_HOME` before running Ready Video if you need those model downloads somewhere else.
+WhisperX model caches use their upstream defaults (commonly `~/.cache/huggingface`, `~/.cache/torch`). Point `HF_HOME`, `HUGGINGFACE_HUB_CACHE`, `TORCH_HOME`, or `XDG_CACHE_HOME` elsewhere if you need to.
 
 ## Configuration
 
-Create a project config:
+Ready Video runs with sensible defaults and needs no config file. To customize, generate one:
 
 ```bash
-ready-video init
+ready-video init            # ./config.yaml for this project
+ready-video init --user     # user-wide config
 ```
 
-Create or replace the user config:
+Settings are merged from these sources, later ones winning:
 
-```bash
-ready-video init --user
-```
+1. User config
+2. `./config.yaml` in the current project
+3. Per-input sidecar named like `clip.mp4.yaml`
+4. Environment variables
+5. `--config <path>`
+6. CLI flags (`--preset`, `--language`, `--aspect`, `--no-agent`)
 
-Configuration is loaded in this order, with later values taking precedence:
-
-1. User config.
-2. `./config.yaml` in the current project.
-3. Per-input sidecar named like `clip.mp4.yaml`.
-4. Environment overrides.
-5. Explicit `--config`.
-6. CLI flags such as `--preset`, `--language`, `--aspect`, and `--no-agent`.
-
-Every setting can be overridden with `READY_VIDEO_` plus section and key names separated by double underscores. Values are parsed as YAML:
+Any setting can be set via `READY_VIDEO_` plus section and key, separated by double underscores (values are parsed as YAML):
 
 ```bash
 READY_VIDEO_RENDER__ASPECT=1:1 ready-video run clip.mp4
 READY_VIDEO_SUBTITLES__PRESET=clean ready-video run clip.mp4
 READY_VIDEO_INBOX_PROCESSING__STABILITY_SECONDS=20 ready-video inbox
-READY_VIDEO_AGENT__BACKEND=none ready-video run clip.mp4
 ```
 
-FFmpeg executable overrides are special and must be set as a pair:
+To point at a specific FFmpeg, set both binaries together:
 
 ```bash
 READY_VIDEO_FFMPEG=/opt/ffmpeg/bin/ffmpeg \
@@ -112,45 +115,38 @@ READY_VIDEO_FFPROBE=/opt/ffmpeg/bin/ffprobe \
 ready-video doctor
 ```
 
-## Local Agent Selection And Privacy
+## Zoom Suggestions And Privacy
 
-Zoom suggestions can be generated by a local CLI agent. The default backend is `auto`, which checks for supported CLIs in this order:
+Punch-in zooms can be proposed by a local CLI agent. The default is `auto`, which probes for supported CLIs in order and picks the first usable one, or skips zoom planning entirely:
 
 ```text
-claude -> codex -> opencode -> none
+claude → codex → opencode → none
 ```
 
-When an agent CLI is selected, Ready Video may pass transcript text and job context to that CLI. The CLI may then send that data to its configured provider depending on your local agent settings. Ready Video does not broker or redact that provider traffic.
-
-Use `--no-agent` for a single command:
+When an agent is selected, Ready Video passes transcript text and job context to that CLI, which **may forward it to that CLI's configured provider**. Ready Video does not broker or redact this traffic. If that isn't what you want:
 
 ```bash
-ready-video run clip.mp4 --no-agent
-ready-video inbox --no-agent
+ready-video run clip.mp4 --no-agent     # skip for one command
 ```
 
-Or make it the default in config:
-
 ```yaml
+# or make it the default in config.yaml
 agent:
   backend: none
 ```
 
-You can explicitly choose a supported agent:
-
-```bash
-READY_VIDEO_AGENT__BACKEND=codex ready-video run clip.mp4
-```
+Pin a specific agent with `READY_VIDEO_AGENT__BACKEND=codex` (or `claude`, `opencode`).
 
 ## Inbox Processing
 
-`ready-video inbox` is a one-shot command. It claims stable media files from `paths.inbox`, processes each eligible file, archives successful originals, and preserves failures with an `error.log`.
+`ready-video inbox` is a one-shot command: it claims stable files from `./inbox`, processes each, archives successful originals, and preserves failures with an `error.log`. It is not a daemon — pair it with your OS scheduler to process files as they arrive.
 
-Eligible extensions default to `mp4`, `mov`, `mkv`, and `webm`. A file must be unchanged for `inbox_processing.stability_seconds` before it is claimed.
+Eligible extensions default to `mp4`, `mov`, `mkv`, `webm`. A file must be unchanged for `inbox_processing.stability_seconds` before it is claimed.
 
-### macOS launchd
+<details>
+<summary><strong>macOS — launchd (run every minute)</strong></summary>
 
-Save a LaunchAgent plist that runs every minute:
+`~/Library/LaunchAgents/video.ready.inbox.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -178,13 +174,14 @@ Save a LaunchAgent plist that runs every minute:
 </plist>
 ```
 
-Load it with:
-
 ```bash
 launchctl load ~/Library/LaunchAgents/video.ready.inbox.plist
 ```
 
-### Linux systemd User Timer
+</details>
+
+<details>
+<summary><strong>Linux — systemd user timer</strong></summary>
 
 `~/.config/systemd/user/ready-video-inbox.service`:
 
@@ -213,16 +210,15 @@ Unit=ready-video-inbox.service
 WantedBy=timers.target
 ```
 
-Enable it with:
-
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now ready-video-inbox.timer
 ```
 
-### Windows Task Scheduler
+</details>
 
-Create a task that runs every minute with:
+<details>
+<summary><strong>Windows — Task Scheduler</strong></summary>
 
 ```powershell
 schtasks /Create /TN "Ready Video Inbox" /SC MINUTE /MO 1 `
@@ -230,26 +226,14 @@ schtasks /Create /TN "Ready Video Inbox" /SC MINUTE /MO 1 `
   /ST 00:00
 ```
 
-Set the task's "Start in" directory to the folder that contains your `config.yaml`, `inbox`, `work`, `edited`, `archive`, and `failed` directories.
+Set the task's "Start in" directory to the folder containing your `config.yaml`, `inbox`, `work`, `edited`, `archive`, and `failed` directories.
 
-## FFmpeg Licensing Notice
+</details>
 
-Ready Video is MIT-licensed, but FFmpeg is a separate project with separate licensing. System FFmpeg builds and managed binaries may include codecs, filters, or build flags that trigger LGPL, GPL, patent, or redistribution obligations independent of this repository.
+## FFmpeg Licensing
 
-Before release, distribution must include a binary-source/license review for the exact FFmpeg build being recommended, downloaded, bundled, mirrored, or documented. Do not treat Ready Video's MIT license as covering FFmpeg or its codec stack.
+Ready Video is MIT-licensed, but FFmpeg is a separate project with separate licensing. System FFmpeg builds and managed binaries may include codecs, filters, or build flags that carry LGPL, GPL, patent, or redistribution obligations independent of this repository. Ready Video's MIT license does not cover FFmpeg or its codec stack. See [CONTRIBUTING.md](CONTRIBUTING.md) for the release-time license-review requirements.
 
-## Release Readiness
+## Contributing
 
-This scaffold is useful for development and smoke testing, but it is not release-ready yet:
-
-- The managed FFmpeg manifest pins archive URLs, archive SHA-256 values, and extracted executable SHA-256 values for macOS Intel, macOS Apple Silicon, Linux x86-64, Linux ARM64, and Windows. Release still needs a legal/license review for those exact binaries and their FFmpeg configure flags.
-- WhisperX lives behind the `transcription` extra and first-run model downloads are not yet wrapped in a polished installer or progress UI.
-- Real WhisperX transcription/alignment still needs cross-platform smoke coverage with packaged installs and real model downloads.
-- Agent privacy depends on the selected local CLI and provider configuration; users need explicit release documentation before agent-enabled defaults.
-- Inbox processing is intentionally one-shot and expects OS automation for polling.
-- Cross-platform smoke tests with real media, real model downloads, hardware acceleration, and packaged installs are still required.
-- PyPI name check: `https://pypi.org/pypi/ready-video/json` returned `404 Not Found` on 2026-07-11, so the distribution name appeared available at that time. Recheck immediately before release.
-
-## Current Scope
-
-The scaffold includes strict configuration loading, timeline math, FFmpeg-backed probing/silence/audio/render stages, subtitle generation, zoom validation, review artifacts, and one-shot inbox processing.
+Setting up a dev environment, the macOS torchcodec/FFmpeg note, project layout, and release readiness live in [CONTRIBUTING.md](CONTRIBUTING.md).

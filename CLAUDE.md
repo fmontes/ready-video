@@ -5,7 +5,7 @@ See `README.md` for what the tool does, install, and CLI usage. This file covers
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest -q            # full suite (~80 tests, seconds)
+.venv/bin/python -m pytest -q            # full suite (~85 tests, seconds)
 .venv/bin/python -m pytest tests/test_renderer.py -q   # one module
 ```
 
@@ -21,6 +21,8 @@ The pipeline is a **canonical edit-decision-list timeline**, not a chain of cut 
 - `Timeline.edited_range_to_source_ranges(start, end)` — segment-aware range mapping. **Use this for anything that trims a range of edited time back to source** (the renderer does). This was the source of the "silence not removed / subs out of sync" bug: the renderer must build spans in edited time and map them with this method.
 
 The renderer (`renderer.py`) splits the edited timeline at every kept-segment boundary *and* every zoom boundary, maps each span to one source range, trims/scales/crops/concats, then burns subtitles **after concat** so subtitle timestamps stay in edited time. Zooms are hard punch-ins done by segment splitting (a static scale+crop per span), never a time-varying `crop` expression.
+
+**Silence removal is two passes** (`refine.py`). Pass 1 (`media.analyze_silence`) is sound-based FFmpeg `silencedetect` → `sound_timeline`. Transcription runs on that cut audio, so the transcript is in pass-1 edited time. Pass 2 (`refine_timeline_with_transcript`) compresses inter-word pauses that stayed above the dB threshold (room tone/breath), producing the final tightened `timeline`. Pass 2 only *shortens* gaps and only across **aligned** word boundaries — it never clips speech and never crosses an `interpolated` (uncertain) word. After pass 2 the transcript is re-timed onto the new axis (`retime_transcript`) before zooms/subtitles are generated, so everything downstream is already on the tightened timeline. Controlled by `silence.transcript_trim*` config. `work/<job_id>/timeline.json` holds the tightened result; the pass-1 timeline is not persisted separately.
 
 ## Conventions & invariants
 

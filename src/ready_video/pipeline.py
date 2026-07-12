@@ -22,6 +22,7 @@ from .ffmpeg import ffprobe_json
 from .identity import config_sha256, file_sha256, job_id, job_sha256, make_manifest, sanitized_stem
 from .io import atomic_write_json, atomic_write_text, atomic_write_yaml, ensure_dirs
 from .media import SourceInfo, analyze_silence, build_speech_wav, probe_source, write_source
+from .refine import TranscriptTrimParams, refine_timeline_with_transcript, retime_transcript
 from .renderer import measure_loudness, render_video, target_resolution
 from .subtitles import generate_subtitles
 from .timeline import Timeline
@@ -71,11 +72,19 @@ def run_file(
 
     source = probe_source(input_path, pair)
     write_source(work_dir / "source.json", source)
-    timeline = analyze_silence(input_path, pair, config, source)
-    atomic_write_json(work_dir / "timeline.json", timeline)
+    sound_timeline = analyze_silence(input_path, pair, config, source)
     speech_wav = work_dir / "speech.wav"
-    build_speech_wav(input_path, speech_wav, pair, source, timeline)
+    build_speech_wav(input_path, speech_wav, pair, source, sound_timeline)
     transcript = transcribe(speech_wav, work_dir / "transcript.json", pair, config)
+    # Second pass: compress inter-word pauses that survived sound-based silence
+    # removal (quiet room tone/breath above the dB threshold). Cuts only across
+    # aligned word boundaries, never clipping speech. Re-time the transcript onto
+    # the tightened axis so downstream zooms/subtitles land correctly.
+    timeline = refine_timeline_with_transcript(sound_timeline, transcript, _transcript_trim_params(config))
+    if timeline is not sound_timeline:
+        transcript = retime_transcript(transcript, sound_timeline, timeline)
+        atomic_write_json(work_dir / "transcript.json", transcript)
+    atomic_write_json(work_dir / "timeline.json", timeline)
     zoom_plan = plan_zooms(transcript, work_dir / "zooms.json", config, no_agent=no_agent)
     ass_path = work_dir / "subs.ass"
     srt_path = work_dir / "optional.srt" if config.subtitles.export_srt else None
@@ -104,6 +113,14 @@ def run_file(
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
+
+
+def _transcript_trim_params(config: ResolvedConfig) -> TranscriptTrimParams:
+    return TranscriptTrimParams(
+        enabled=config.silence.enabled and config.silence.transcript_trim,
+        max_gap_s=config.silence.transcript_trim_max_gap_s,
+        word_margin_s=config.silence.transcript_trim_word_margin_s,
+    )
 
 
 def _completed_output(output_path: Path, job_hash: str, pair, *, expected_resolution: tuple[int, int] | None = None) -> bool:
