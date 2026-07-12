@@ -286,7 +286,16 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 def _allowed_archive_hosts(url: str) -> set[str]:
     host = urllib.parse.urlparse(url).hostname
-    hosts = {"github.com", "raw.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"}
+    # GitHub blob (/raw/) URLs backed by Git-LFS 302-redirect to
+    # media.githubusercontent.com; release assets go through
+    # objects/github-releases.githubusercontent.com. All are GitHub CDN hosts.
+    hosts = {
+        "github.com",
+        "raw.githubusercontent.com",
+        "media.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "github-releases.githubusercontent.com",
+    }
     if host:
         hosts.add(host)
     return hosts

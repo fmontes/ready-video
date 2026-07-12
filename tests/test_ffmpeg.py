@@ -262,3 +262,12 @@ def _zip_archive(path: Path, files: dict[str, bytes]) -> Path:
 
 def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def test_allowed_archive_hosts_include_github_lfs_media_redirect():
+    # GitHub /raw/ (Git-LFS) archive URLs 302-redirect to media.githubusercontent.com.
+    # Regression: that host must stay allowlisted or the managed download fails.
+    hosts = ffmpeg._allowed_archive_hosts("https://github.com/org/repo/raw/main/darwin_arm64.zip")
+    assert "media.githubusercontent.com" in hosts
+    assert "github.com" in hosts
+    assert "objects.githubusercontent.com" in hosts
