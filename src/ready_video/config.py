@@ -15,7 +15,6 @@ from .errors import ReadyVideoError, invalid_config
 
 SECRET_KEYS = {"api_key", "apikey", "token", "secret", "password"}
 ASPECTS = {"9:16", "1:1", "16:9"}
-AGENT_BACKENDS = {"auto", "none", "claude", "codex", "opencode"}
 SUBTITLE_MODES = {"karaoke", "line", "none"}
 SUBTITLE_PRESETS: dict[str, dict[str, Any]] = {
     "bold": {
@@ -66,8 +65,6 @@ CONFIG_COMMENTS = {
     "paths": "Runtime directories. Relative paths are resolved from the current working directory.",
     "silence": "Silence analysis settings used to build the canonical edit timeline.",
     "transcription": "WhisperX model selection. auto chooses a practical model/device/compute type.",
-    "agent": "Optional local CLI agent for zoom suggestions. auto checks claude, codex, then opencode.",
-    "zooms": "Validation limits for agent-selected punch-in moments.",
     "subtitles": "Burned subtitle settings. null values inherit from the selected preset.",
     "render": "Final render settings. Output frame rate and pixel format are fixed internally.",
     "inbox_processing": "One-shot inbox claiming and lifecycle settings.",
@@ -138,37 +135,6 @@ class TranscriptionConfig(StrictModel):
     device: str = "auto"
     compute_type: str = "auto"
     initial_prompt: str = ""
-
-
-class AgentConfig(StrictModel):
-    backend: str = "auto"
-    model: str = ""
-    timeout_s: int = 120
-    prompt_path: str = ""
-
-    @field_validator("backend")
-    @classmethod
-    def validate_backend(cls, value: str) -> str:
-        if value not in AGENT_BACKENDS:
-            raise ValueError(f"agent.backend must be one of {sorted(AGENT_BACKENDS)}")
-        return value
-
-
-class ZoomConfig(StrictModel):
-    min_duration_s: float = 1.5
-    max_duration_s: float = 4.0
-    max_per_clip: int = 5
-    min_gap_s: float = 15.0
-
-    @model_validator(mode="after")
-    def validate_zoom_ranges(self) -> "ZoomConfig":
-        if self.min_duration_s <= 0 or self.max_duration_s <= 0:
-            raise ValueError("zoom durations must be positive")
-        if self.min_duration_s > self.max_duration_s:
-            raise ValueError("zooms.min_duration_s cannot exceed max_duration_s")
-        if self.max_per_clip < 0:
-            raise ValueError("zooms.max_per_clip must be nonnegative")
-        return self
 
 
 class SubtitleConfig(StrictModel):
@@ -289,8 +255,6 @@ class Config(StrictModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     silence: SilenceConfig = Field(default_factory=SilenceConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
-    agent: AgentConfig = Field(default_factory=AgentConfig)
-    zooms: ZoomConfig = Field(default_factory=ZoomConfig)
     subtitles: SubtitleConfig = Field(default_factory=SubtitleConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
     inbox_processing: InboxProcessingConfig = Field(default_factory=InboxProcessingConfig)

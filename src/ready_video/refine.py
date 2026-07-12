@@ -18,8 +18,7 @@ the first pass rather than replacing it:
 The transcript is in first-pass EDITED time. Each tightened edited range is
 mapped back to SOURCE via the first-pass timeline, then a fresh timeline is
 emitted (source ranges + a new contiguous edited axis). Callers re-time the
-transcript, subtitles, and zooms onto this new axis with
-``remap_edited_time``.
+transcript and subtitles onto this new axis with ``retime_transcript``.
 """
 
 from __future__ import annotations
@@ -146,26 +145,6 @@ def retime_transcript(transcript: Transcript, old: Timeline, new: Timeline) -> T
             segment["end"] = segment["start"]
     data["duration"] = new.edited_duration
     return Transcript.model_validate(data)
-
-
-def retime_zoom_starts_ends(zooms, transcript: Transcript):
-    """Re-derive each zoom's edited start/end from its word indices.
-
-    Word indices are stable across the trim (words are never dropped), so the
-    zoom span is rebuilt from the re-timed transcript. Returns the same object
-    with start/end updated in place.
-    """
-    by_index = {w.i: w for w in transcript.words}
-    for zoom in zooms.zooms:
-        start_word = by_index.get(zoom.start_word_index)
-        end_word = by_index.get(zoom.end_word_index)
-        if start_word is not None:
-            zoom.start = start_word.start
-        if end_word is not None:
-            zoom.end = end_word.end
-        if zoom.end < zoom.start:
-            zoom.end = zoom.start
-    return zooms
 
 
 def _snap(old: Timeline, new: Timeline, edited_time: float, *, prefer: str) -> float:

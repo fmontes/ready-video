@@ -25,7 +25,6 @@ def test_config_defaults_match_v1_contract():
     assert config.transcription.language == "auto"
     assert config.transcription.device == "auto"
     assert config.transcription.compute_type == "auto"
-    assert config.agent.backend == "auto"
     assert config.subtitles.preset == "bold"
     assert config.render.aspect == "9:16"
     assert config.render.crf == 18
@@ -45,7 +44,7 @@ def test_config_rejects_unknown_keys():
 
 def test_config_rejects_secret_keys():
     with pytest.raises(ValueError, match="looks like a secret"):
-        load_config({"agent": {"api_key": "do-not-store-this"}})
+        load_config({"transcription": {"api_key": "do-not-store-this"}})
 
 
 def test_nullable_subtitle_fields_are_allowed():

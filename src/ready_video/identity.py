@@ -36,7 +36,6 @@ class OutputManifest:
     input_name: str
     output_name: str
     created_at: str
-    agent_backend: str
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return asdict(self)
@@ -104,7 +103,6 @@ def make_manifest(
     content_hash: str,
     config_hash: str,
     job_hash: str,
-    agent_backend: str,
 ) -> OutputManifest:
     return OutputManifest(
         job_id=job_id(job_hash),
@@ -115,7 +113,6 @@ def make_manifest(
         input_name=input_path.name,
         output_name=output_name,
         created_at=datetime.now(timezone.utc).isoformat(),
-        agent_backend=agent_backend,
     )
 
 

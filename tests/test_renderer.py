@@ -6,7 +6,6 @@ from ready_video.config import Config
 from ready_video.errors import ReadyVideoError
 from ready_video.renderer import _loudnorm_filter, _parse_loudnorm_json, _render_spans, _span_source_range, build_render_args
 from ready_video.timeline import Timeline, TimelineSegment
-from ready_video.zooms import ZoomPlan
 
 
 def _two_gap_timeline() -> Timeline:
@@ -25,7 +24,6 @@ def test_final_render_encodes_once_from_original():
     args = build_render_args(
         Path("input.mp4"),
         Path("edited.mp4"),
-        zooms=[],
         mode="final",
         ffmpeg_bin="/usr/bin/ffmpeg",
     )
@@ -41,7 +39,6 @@ def test_preview_render_command_adds_short_review_settings():
     args = build_render_args(
         "input.mp4",
         "preview.mp4",
-        zooms=[],
         mode="preview",
     )
 
@@ -91,12 +88,11 @@ def test_render_spans_map_to_edited_duration_not_source_duration():
     # Regression: summing per-span source durations must equal the edited
     # duration (silence removed), never the full source duration.
     timeline = _two_gap_timeline()
-    empty_zooms = ZoomPlan.model_validate({"zooms": [], "backend": "none"})
 
-    spans = _render_spans(timeline, empty_zooms)
+    spans = _render_spans(timeline)
     total_source = sum(
         end - start
-        for edited_start, edited_end, _ in spans
+        for edited_start, edited_end in spans
         for start, end in [_span_source_range(timeline, edited_start, edited_end)]
     )
 

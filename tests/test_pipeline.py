@@ -11,7 +11,6 @@ from ready_video.config import Config
 from ready_video.media import SourceInfo
 from ready_video.timeline import Timeline, TimelineSegment
 from ready_video.transcript import Transcript, Word
-from ready_video.zooms import ZoomPlan
 
 
 def _isolate_auto_config(monkeypatch, tmp_path: Path) -> None:
@@ -62,7 +61,6 @@ def test_review_writes_artifact_manifest(monkeypatch, tmp_path: Path) -> None:
                 "failed": tmp_path / "failed",
                 "inbox": tmp_path / "inbox",
             },
-            "agent": {"backend": "none"},
         },
     )
     source_media = tmp_path / "clip.mp4"
@@ -82,21 +80,15 @@ def test_review_writes_artifact_manifest(monkeypatch, tmp_path: Path) -> None:
         pipeline.atomic_write_json(output_path, transcript)
         return transcript
 
-    def fake_plan_zooms(transcript, output_path, config, *, no_agent=False):
-        zooms = ZoomPlan(backend="none")
-        pipeline.atomic_write_json(output_path, zooms)
-        return zooms
-
     def fake_generate_subtitles(transcript, ass_path, srt_path, config, resolution):
         ass_path.write_text("[Script Info]\n")
         if srt_path:
             srt_path.write_text("")
 
-    def fake_render(input_path, output_path, pair, source, timeline, zoom_plan, config, *, subtitles_path=None, preview=False):
+    def fake_render(input_path, output_path, pair, source, timeline, config, *, subtitles_path=None, preview=False):
         output_path.write_bytes(b"preview" if preview else b"final")
 
     monkeypatch.setattr(pipeline, "transcribe", fake_transcribe)
-    monkeypatch.setattr(pipeline, "plan_zooms", fake_plan_zooms)
     monkeypatch.setattr(pipeline, "generate_subtitles", fake_generate_subtitles)
     monkeypatch.setattr(pipeline, "render_video", fake_render)
 
@@ -106,11 +98,10 @@ def test_review_writes_artifact_manifest(monkeypatch, tmp_path: Path) -> None:
     artifacts = json.loads(artifacts_path.read_text())
     assert review_path.name == "review.html"
     assert artifacts["job_id"] == review_path.parent.name
-    assert artifacts["zoom_count"] == 0
     review_html = review_path.read_text()
     assert "<h2>Transcript</h2>" in review_html
     assert "0: 0.000-0.500 [aligned] &lt;hello&gt;" in review_html
-    for key in ["job", "source", "timeline", "transcript", "zooms", "preview", "resolved_config", "subtitles_ass"]:
+    for key in ["job", "source", "timeline", "transcript", "preview", "resolved_config", "subtitles_ass"]:
         assert Path(artifacts[key]).exists()
 
 
@@ -134,7 +125,6 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
                 "failed": tmp_path / "ambient-failed",
                 "inbox": tmp_path / "ambient-inbox",
             },
-            "agent": {"backend": "none"},
         },
     )
     captured_config = Config.model_validate(
@@ -146,7 +136,6 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
                 "failed": tmp_path / "captured-failed",
                 "inbox": tmp_path / "captured-inbox",
             },
-            "agent": {"backend": "none"},
         }
     ).resolved()
     pipeline.atomic_write_yaml(work_dir / "resolved-config.yaml", captured_config)
@@ -157,12 +146,11 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
     )
     pipeline.atomic_write_json(work_dir / "timeline.json", _timeline())
     pipeline.atomic_write_json(work_dir / "transcript.json", Transcript(duration=8.0))
-    pipeline.atomic_write_json(work_dir / "zooms.json", ZoomPlan(backend="none"))
     (work_dir / "subs.ass").write_text("[Script Info]\n")
 
     seen_configs = []
 
-    def fake_render(input_path, output_path, pair, source, timeline, zoom_plan, config, *, subtitles_path=None, loudness=None, preview=False):
+    def fake_render(input_path, output_path, pair, source, timeline, config, *, subtitles_path=None, loudness=None, preview=False):
         seen_configs.append(config)
         output_path.write_bytes(b"approved")
 

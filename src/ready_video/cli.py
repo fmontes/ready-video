@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import generate_default_config_yaml, user_config_path
 from .errors import ReadyVideoError
-from .pipeline import approve, doctor, edit_zooms, inbox, run_file
+from .pipeline import approve, doctor, inbox, run_file
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -15,16 +15,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         overrides = _overrides(args)
         if args.command == "run":
-            output = run_file(Path(args.file), config_path=args.config, review=args.review, no_agent=args.no_agent, cli_overrides=overrides)
+            output = run_file(Path(args.file), config_path=args.config, review=args.review, cli_overrides=overrides)
             print(output)
             return 0
         if args.command == "inbox":
             return inbox(config_path=args.config, cli_overrides=overrides)
         if args.command == "approve":
             print(approve(args.job_id, config_path=args.config))
-            return 0
-        if args.command == "edit-zooms":
-            edit_zooms(args.job_id)
             return 0
         if args.command == "init":
             target = user_config_path() if args.user else Path("config.yaml")
@@ -56,8 +53,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(inbox_parser, suppress_defaults=True)
     approve_parser = sub.add_parser("approve")
     approve_parser.add_argument("job_id")
-    edit = sub.add_parser("edit-zooms")
-    edit.add_argument("job_id")
     init = sub.add_parser("init")
     init.add_argument("--user", action="store_true")
     doctor_parser = sub.add_parser("doctor")
@@ -70,7 +65,6 @@ def _add_common(parser: argparse.ArgumentParser, *, suppress_defaults: bool = Fa
     parser.add_argument("--config", type=Path, default=default)
     parser.add_argument("--preset", default=default)
     parser.add_argument("--language", default=default)
-    parser.add_argument("--no-agent", action="store_true", default=argparse.SUPPRESS if suppress_defaults else False)
     parser.add_argument("--aspect", default=default)
 
 
@@ -82,8 +76,6 @@ def _overrides(args: argparse.Namespace) -> dict:
         data.setdefault("transcription", {})["language"] = args.language
     if getattr(args, "aspect", None):
         data.setdefault("render", {})["aspect"] = args.aspect
-    if getattr(args, "no_agent", False):
-        data.setdefault("agent", {})["backend"] = "none"
     return data
 
 

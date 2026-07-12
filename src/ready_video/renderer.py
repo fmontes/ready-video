@@ -9,7 +9,6 @@ from .errors import ReadyVideoError
 from .ffmpeg import BinaryPair, available_filters, run
 from .media import SourceInfo
 from .timeline import Timeline
-from .zooms import ZoomPlan
 
 
 TARGETS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
@@ -19,7 +18,6 @@ def build_render_args(
     input_path,
     output_path,
     *,
-    zooms: list | None = None,
     mode: str = "final",
     ffmpeg_bin: str = "ffmpeg",
 ) -> list[str]:
@@ -48,7 +46,6 @@ def render_video(
     pair: BinaryPair,
     source: SourceInfo,
     timeline: Timeline,
-    zooms: ZoomPlan,
     config: ResolvedConfig,
     *,
     subtitles_path: Path | None = None,
@@ -58,22 +55,19 @@ def render_video(
     if source.color_transfer.lower() in {"smpte2084", "arib-std-b67"} and not {"zscale", "tonemap"} <= available_filters(pair.ffmpeg):
         raise ReadyVideoError("UNSUPPORTED_HDR", "HDR input requires FFmpeg zscale and tonemap filters.")
     width, height = target_resolution(config.render.aspect, preview=preview)
-    spans = _render_spans(timeline, zooms)
+    spans = _render_spans(timeline)
     filters: list[str] = []
     vlabels: list[str] = []
     alabels: list[str] = []
-    for i, (edited_start, edited_end, zoom) in enumerate(spans):
+    for i, (edited_start, edited_end) in enumerate(spans):
         source_start, source_end = _span_source_range(timeline, edited_start, edited_end)
         vlabel = f"v{i}"
         alabel = f"a{i}"
-        zoom_scale = zoom.intensity if zoom else 1.0
-        scale_width = int(width * zoom_scale) // 2 * 2
-        scale_height = int(height * zoom_scale) // 2 * 2
         crop_x = f"(iw-{width})/2+({config.render.crop_x_offset})*(iw-{width})/2"
         crop_y = f"(ih-{height})/2+({config.render.crop_y_offset})*(ih-{height})/2"
         filters.append(
             f"[0:{source.video_stream_index}]trim=start={source_start}:end={source_end},setpts=PTS-STARTPTS,"
-            f"scale={scale_width}:{scale_height}:force_original_aspect_ratio=increase,"
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height}:{crop_x}:{crop_y},fps=30,setsar=1,format=yuv420p[{vlabel}]"
         )
         filters.append(f"[0:{source.audio_stream_index}]atrim=start={source_start}:end={source_end},asetpts=PTS-STARTPTS[{alabel}]")
@@ -215,19 +209,10 @@ def _span_source_range(timeline: Timeline, edited_start: float, edited_end: floa
     return ranges[0]
 
 
-def _render_spans(timeline: Timeline, zooms: ZoomPlan) -> list[tuple[float, float, object | None]]:
+def _render_spans(timeline: Timeline) -> list[tuple[float, float]]:
     boundaries = {0.0, timeline.edited_duration}
     for segment in timeline.segments:
         boundaries.add(segment.edited_start)
         boundaries.add(segment.edited_end)
-    for zoom in zooms.zooms:
-        boundaries.add(max(0.0, zoom.start))
-        boundaries.add(min(timeline.edited_duration, zoom.end))
     ordered = sorted(boundaries)
-    spans = []
-    for start, end in zip(ordered, ordered[1:], strict=False):
-        if end <= start:
-            continue
-        active = next((zoom for zoom in zooms.zooms if start >= zoom.start - 1e-6 and end <= zoom.end + 1e-6), None)
-        spans.append((start, end, active))
-    return spans
+    return [(start, end) for start, end in zip(ordered, ordered[1:], strict=False) if end > start]

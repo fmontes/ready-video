@@ -18,7 +18,6 @@ def _config(tmp_path: Path):
                 "edited": tmp_path / "edited",
                 "failed": tmp_path / "failed",
             },
-            "agent": {"backend": "none"},
             "inbox_processing": {"stability_seconds": 8},
         }
     ).resolved()
@@ -39,13 +38,13 @@ def test_inbox_claims_sidecars_archives_success_and_preserves_failures(monkeypat
     _write_old(config.paths.inbox / "good.mp4")
     _write_old(config.paths.inbox / "good.mp4.yaml", "render:\n  aspect: '1:1'\n")
     _write_old(config.paths.inbox / "bad.mp4")
-    _write_old(config.paths.inbox / "bad.mp4.yaml", "agent:\n  backend: none\n")
+    _write_old(config.paths.inbox / "bad.mp4.yaml", "render:\n  aspect: '9:16'\n")
     fresh = config.paths.inbox / "fresh.mp4"
     fresh.write_bytes(b"still uploading")
 
     monkeypatch.setattr(pipeline, "load_config", lambda **kwargs: config)
 
-    def fake_run_file(path, *, config_path=None, cli_overrides=None, review=False, no_agent=False):
+    def fake_run_file(path, *, config_path=None, cli_overrides=None, review=False):
         if path.name == "bad.mp4":
             raise RuntimeError("render failed")
         output = config.paths.edited / "good_abcd1234.mp4"

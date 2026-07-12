@@ -22,10 +22,5 @@ class TranscriptError(ReadyVideoError):
         super().__init__("TRANSCRIPTION_FAILED", message, remediation, details)
 
 
-class ZoomValidationError(ReadyVideoError):
-    def __init__(self, message: str, remediation: str | None = None, details: str | None = None):
-        super().__init__("ZOOM_PLANNING_FAILED", message, remediation, details)
-
-
 def invalid_config(message: str, remediation: str | None = None) -> ReadyVideoError:
     return ReadyVideoError("INVALID_CONFIG", message, remediation)

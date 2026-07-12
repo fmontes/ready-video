@@ -11,7 +11,6 @@ from ready_video.pipeline import run_file
 from ready_video.media import SourceInfo
 from ready_video.timeline import Timeline, TimelineSegment
 from ready_video.transcript import Transcript
-from ready_video.zooms import ZoomPlan
 
 
 class DummyPair:
@@ -39,7 +38,6 @@ VALID_VIDEO_PROBE = {
 
 def _config(tmp_path: Path):
     config = Config().resolved()
-    config.agent.backend = "none"
     config.paths.edited = tmp_path / "edited"
     config.paths.work = tmp_path / "work"
     config.paths.archive = tmp_path / "archive"
@@ -64,7 +62,6 @@ def test_run_file_skips_existing_manifest_with_valid_media(tmp_path, monkeypatch
         content_hash=file_sha256(source),
         config_hash=config_sha256(config),
         job_hash=full_job_hash,
-        agent_backend="none",
     )
     output.with_suffix(".json").write_text(json.dumps(manifest.model_dump()))
 
@@ -77,7 +74,7 @@ def test_run_file_skips_existing_manifest_with_valid_media(tmp_path, monkeypatch
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("expensive pipeline stage should have been skipped")),
     )
 
-    assert run_file(source, no_agent=True) == output
+    assert run_file(source) == output
 
 
 def test_review_mode_ignores_final_output_cache_and_reuses_work_artifacts(tmp_path, monkeypatch):
@@ -99,7 +96,6 @@ def test_review_mode_ignores_final_output_cache_and_reuses_work_artifacts(tmp_pa
         content_hash=content_hash,
         config_hash=cfg_hash,
         job_hash=full_job_hash,
-        agent_backend="none",
     )
     output.with_suffix(".json").write_text(json.dumps(manifest.model_dump()))
     work_dir = config.paths.work / jid
@@ -119,7 +115,6 @@ def test_review_mode_ignores_final_output_cache_and_reuses_work_artifacts(tmp_pa
         ),
     )
     pipeline.atomic_write_json(work_dir / "transcript.json", Transcript(duration=1.0))
-    pipeline.atomic_write_json(work_dir / "zooms.json", ZoomPlan(backend="none"))
     (work_dir / "subs.ass").write_text("[Script Info]\n")
 
     monkeypatch.setattr("ready_video.pipeline.load_config", lambda **kwargs: config)
@@ -137,7 +132,7 @@ def test_review_mode_ignores_final_output_cache_and_reuses_work_artifacts(tmp_pa
 
     monkeypatch.setattr("ready_video.pipeline.render_video", fake_render)
 
-    review_path = run_file(source, review=True, no_agent=True)
+    review_path = run_file(source, review=True)
 
     assert review_path == work_dir / "review.html"
     assert review_path.exists()
@@ -161,7 +156,6 @@ def test_run_file_validates_rendered_output(tmp_path, monkeypatch):
 
     from ready_video.timeline import SilenceParams, timeline_from_silences
     from ready_video.transcript import Transcript
-    from ready_video.zooms import ZoomPlan
 
     monkeypatch.setattr("ready_video.pipeline.load_config", lambda **kwargs: config)
     monkeypatch.setattr("ready_video.pipeline.resolve_binaries", lambda: DummyPair())
@@ -172,7 +166,6 @@ def test_run_file_validates_rendered_output(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("ready_video.pipeline.build_speech_wav", lambda *args, **kwargs: None)
     monkeypatch.setattr("ready_video.pipeline.transcribe", lambda *args, **kwargs: Transcript(duration=1.0))
-    monkeypatch.setattr("ready_video.pipeline.plan_zooms", lambda *args, **kwargs: ZoomPlan(backend="none"))
     monkeypatch.setattr("ready_video.pipeline.generate_subtitles", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "ready_video.pipeline.measure_loudness",
@@ -199,7 +192,7 @@ def test_run_file_validates_rendered_output(tmp_path, monkeypatch):
     monkeypatch.setattr("ready_video.pipeline.ffprobe_json", fake_probe)
     monkeypatch.setattr("ready_video.pipeline.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=""))
 
-    output = run_file(source, no_agent=True)
+    output = run_file(source)
 
     assert output.exists()
     assert output.with_suffix(".json").exists()

@@ -6,7 +6,6 @@ from importlib import metadata
 import json
 import os
 import shutil
-import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -14,7 +13,6 @@ from typing import Any
 import yaml
 
 from . import PIPELINE_VERSION
-from .agent import AGENT_ORDER, select_agent_backend
 from .config import ResolvedConfig, config_to_yaml, load_config
 from .errors import ReadyVideoError
 from .ffmpeg import BinaryPair, capability_report, resolve_binaries, run
@@ -27,7 +25,6 @@ from .renderer import measure_loudness, render_video, target_resolution
 from .subtitles import generate_subtitles
 from .timeline import Timeline
 from .transcript import Transcript, transcribe
-from .zooms import ZoomPlan, plan_zooms, select_backend, validate_zoom_plan
 
 
 def run_file(
@@ -35,7 +32,6 @@ def run_file(
     *,
     config_path: Path | None = None,
     review: bool = False,
-    no_agent: bool = False,
     cli_overrides: dict | None = None,
 ) -> Path:
     input_path = input_path.resolve()
@@ -43,11 +39,6 @@ def run_file(
         raise ReadyVideoError("INVALID_MEDIA", f"Input file does not exist: {input_path}")
     sidecar = input_path.with_name(input_path.name + ".yaml")
     config = load_config(config_path=config_path, sidecar_path=sidecar if sidecar.exists() else None, cli_overrides=cli_overrides)
-    if no_agent:
-        config.agent.backend = "none"
-    elif config.agent.backend == "auto":
-        selected_backend = select_backend(config)
-        config.agent.backend = selected_backend.name if selected_backend else "none"
     pair = resolve_binaries()
     ensure_dirs(config.paths.work, config.paths.edited, config.paths.archive, config.paths.failed, config.paths.inbox)
     content_hash = file_sha256(input_path)
@@ -79,29 +70,28 @@ def run_file(
     # Second pass: compress inter-word pauses that survived sound-based silence
     # removal (quiet room tone/breath above the dB threshold). Cuts only across
     # aligned word boundaries, never clipping speech. Re-time the transcript onto
-    # the tightened axis so downstream zooms/subtitles land correctly.
+    # the tightened axis so subtitles land correctly.
     timeline = refine_timeline_with_transcript(sound_timeline, transcript, _transcript_trim_params(config))
     if timeline is not sound_timeline:
         transcript = retime_transcript(transcript, sound_timeline, timeline)
         atomic_write_json(work_dir / "transcript.json", transcript)
     atomic_write_json(work_dir / "timeline.json", timeline)
-    zoom_plan = plan_zooms(transcript, work_dir / "zooms.json", config, no_agent=no_agent)
     ass_path = work_dir / "subs.ass"
     srt_path = work_dir / "optional.srt" if config.subtitles.export_srt else None
     generate_subtitles(transcript, ass_path, srt_path, config, target_resolution(config.render.aspect))
 
     if review:
         preview_path = work_dir / "preview.mp4"
-        render_video(input_path, preview_path, pair, source, timeline, zoom_plan, config, subtitles_path=ass_path if ass_path.exists() else None, preview=True)
-        _write_review_artifacts(work_dir, input_path, config, timeline, zoom_plan, preview_path, ass_path, srt_path)
-        _write_review(work_dir / "review.html", input_path, config, timeline, transcript, zoom_plan, preview_path)
+        render_video(input_path, preview_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, preview=True)
+        _write_review_artifacts(work_dir, input_path, config, timeline, preview_path, ass_path, srt_path)
+        _write_review(work_dir / "review.html", input_path, config, timeline, transcript, preview_path)
         return work_dir / "review.html"
 
     loudness = None
     if config.render.loudnorm:
         loudness = measure_loudness(input_path, pair, source, timeline, config)
         atomic_write_json(work_dir / "loudness.json", loudness)
-    render_video(input_path, output_path, pair, source, timeline, zoom_plan, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
+    render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=expected_resolution)
     manifest = make_manifest(
         input_path=input_path,
@@ -109,7 +99,6 @@ def run_file(
         content_hash=content_hash,
         config_hash=cfg_hash,
         job_hash=full_job_hash,
-        agent_backend=zoom_plan.backend,
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
@@ -150,19 +139,17 @@ def _write_review_from_existing_artifacts(input_path: Path, work_dir: Path, conf
     source_path = work_dir / "source.json"
     timeline_path = work_dir / "timeline.json"
     transcript_path = work_dir / "transcript.json"
-    zooms_path = work_dir / "zooms.json"
     ass_path = work_dir / "subs.ass"
-    required = [source_path, timeline_path, transcript_path, zooms_path, ass_path, work_dir / "job.json", work_dir / "resolved-config.yaml"]
+    required = [source_path, timeline_path, transcript_path, ass_path, work_dir / "job.json", work_dir / "resolved-config.yaml"]
     if not all(path.exists() for path in required):
         return None
     source = SourceInfo.model_validate(json.loads(source_path.read_text()))
     timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
     transcript = Transcript.model_validate(json.loads(transcript_path.read_text()))
-    zoom_plan = ZoomPlan.model_validate(json.loads(zooms_path.read_text()))
     preview_path = work_dir / "preview.mp4"
-    render_video(input_path, preview_path, pair, source, timeline, zoom_plan, config, subtitles_path=ass_path, preview=True)
-    _write_review_artifacts(work_dir, input_path, config, timeline, zoom_plan, preview_path, ass_path, work_dir / "optional.srt")
-    _write_review(work_dir / "review.html", input_path, config, timeline, transcript, zoom_plan, preview_path)
+    render_video(input_path, preview_path, pair, source, timeline, config, subtitles_path=ass_path, preview=True)
+    _write_review_artifacts(work_dir, input_path, config, timeline, preview_path, ass_path, work_dir / "optional.srt")
+    _write_review(work_dir / "review.html", input_path, config, timeline, transcript, preview_path)
     return work_dir / "review.html"
 
 
@@ -210,8 +197,7 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
     source_path = work_dir / "source.json"
     timeline_path = work_dir / "timeline.json"
     transcript_path = work_dir / "transcript.json"
-    zooms_path = work_dir / "zooms.json"
-    missing = [path.name for path in [source_path, timeline_path, transcript_path, zooms_path] if not path.exists()]
+    missing = [path.name for path in [source_path, timeline_path, transcript_path] if not path.exists()]
     if missing:
         raise ReadyVideoError("INVALID_MEDIA", f"Reviewed job {job_id_value} is missing artifacts: {', '.join(missing)}.")
 
@@ -219,9 +205,6 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
     ensure_dirs(config.paths.edited, config.paths.archive, config.paths.failed)
     source = SourceInfo.model_validate(json.loads(source_path.read_text()))
     timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
-    transcript = Transcript.model_validate(json.loads(transcript_path.read_text()))
-    zoom_plan = ZoomPlan.model_validate(json.loads(zooms_path.read_text()))
-    validate_zoom_plan(zoom_plan, transcript, config, edited_duration=timeline.edited_duration)
     ass_path = work_dir / "subs.ass"
     output_name = f"{sanitized_stem(input_path)}_{job_id_value}.mp4"
     output_path = config.paths.edited / output_name
@@ -233,7 +216,7 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
         else:
             loudness = measure_loudness(input_path, pair, source, timeline, config)
             atomic_write_json(loudness_path, loudness)
-    render_video(input_path, output_path, pair, source, timeline, zoom_plan, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
+    render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=target_resolution(config.render.aspect))
 
     content_hash = file_sha256(input_path)
@@ -245,23 +228,9 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
         content_hash=content_hash,
         config_hash=cfg_hash,
         job_hash=full_job_hash,
-        agent_backend=zoom_plan.backend,
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
-
-
-def edit_zooms(job_id_value: str) -> None:
-    work_dir = _review_work_dir(job_id_value)
-    config = _load_captured_config(work_dir / "resolved-config.yaml") if (work_dir / "resolved-config.yaml").exists() else load_config()
-    path = work_dir / "zooms.json"
-    if not path.exists():
-        raise ReadyVideoError("INVALID_MEDIA", f"No zoom file found for {job_id_value}.")
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor:
-        raise ReadyVideoError("INVALID_CONFIG", "Set VISUAL or EDITOR to edit zooms.")
-    subprocess.run([editor, str(path)], check=True)
-    _validate_saved_zoom_artifacts(work_dir, config)
 
 
 def inbox(*, config_path: Path | None = None, cli_overrides: dict | None = None) -> int:
@@ -361,19 +330,6 @@ def _review_work_dir(job_id_value: str, *, config_path: Path | None = None) -> P
     return candidates[0] if candidates else Path("work") / job_id_value
 
 
-def _validate_saved_zoom_artifacts(work_dir: Path, config: ResolvedConfig) -> None:
-    transcript_path = work_dir / "transcript.json"
-    timeline_path = work_dir / "timeline.json"
-    zooms_path = work_dir / "zooms.json"
-    missing = [path.name for path in [transcript_path, timeline_path, zooms_path] if not path.exists()]
-    if missing:
-        raise ReadyVideoError("INVALID_MEDIA", f"Cannot validate zoom edits; missing artifacts: {', '.join(missing)}.")
-    transcript = Transcript.model_validate(json.loads(transcript_path.read_text()))
-    timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
-    zoom_plan = ZoomPlan.model_validate(json.loads(zooms_path.read_text()))
-    validate_zoom_plan(zoom_plan, transcript, config, edited_duration=timeline.edited_duration)
-
-
 def _load_captured_config(path: Path) -> ResolvedConfig:
     try:
         raw = yaml.safe_load(path.read_text()) or {}
@@ -430,13 +386,6 @@ def doctor(*, install_missing: bool = False) -> int:
         checks.append(("whisperx", "pass", f"import ok ({_package_version('whisperx')})"))
     except Exception as exc:
         checks.append(("whisperx", "fail", f"import failed; install the transcription dependency ({exc.__class__.__name__}: {exc})"))
-
-    for name in AGENT_ORDER:
-        selection = select_agent_backend(name)
-        detail = selection.path if selection.available else selection.reason
-        checks.append((f"agent.{name}", "pass" if selection.available else "warning", detail or "available"))
-    auto = select_agent_backend("auto")
-    checks.append(("agent.auto", "pass" if auto.available else "warning", auto.reason))
 
     if config is not None:
         for name, path in config.paths.model_dump().items():
@@ -574,7 +523,6 @@ def _write_review_artifacts(
     input_path: Path,
     config: ResolvedConfig,
     timeline: Any,
-    zooms: ZoomPlan,
     preview_path: Path,
     ass_path: Path,
     srt_path: Path | None,
@@ -589,17 +537,15 @@ def _write_review_artifacts(
         "source": str(work_dir / "source.json"),
         "timeline": str(work_dir / "timeline.json"),
         "transcript": str(work_dir / "transcript.json"),
-        "zooms": str(work_dir / "zooms.json"),
         "subtitles_ass": str(ass_path),
         "subtitles_srt": str(srt_path) if srt_path else None,
         "config_sha256": config_sha256(config),
         "edited_duration": timeline.edited_duration,
-        "zoom_count": len(zooms.zooms),
     }
     atomic_write_json(work_dir / "review-artifacts.json", artifacts)
 
 
-def _write_review(path: Path, input_path: Path, config: ResolvedConfig, timeline, transcript: Transcript, zooms: ZoomPlan, preview_path: Path) -> None:
+def _write_review(path: Path, input_path: Path, config: ResolvedConfig, timeline, transcript: Transcript, preview_path: Path) -> None:
     removed = []
     cursor = 0.0
     for segment in timeline.segments:
@@ -621,8 +567,6 @@ def _write_review(path: Path, input_path: Path, config: ResolvedConfig, timeline
 <pre>{json.dumps(removed, indent=2)}</pre>
 <h2>Transcript</h2>
 <pre>{_format_review_transcript(transcript)}</pre>
-<h2>Zooms</h2>
-<pre>{json.dumps(zooms.model_dump(mode="json"), indent=2)}</pre>
 <h2>Resolved config</h2>
 <pre>{config_to_yaml(config)}</pre>
 """
