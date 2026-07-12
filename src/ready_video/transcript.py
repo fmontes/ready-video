@@ -91,12 +91,12 @@ def _transcribe_with_faster_whisper(speech_wav: Path, duration: float, config: R
     segments, info = model.transcribe(str(speech_wav), **kwargs)
     language = getattr(info, "language", None) or "unknown"
     raw = {"segments": [_segment_to_dict(segment) for segment in segments]}
-    return normalize_whisperx(raw, duration, language)
+    return normalize_transcript(raw, duration, language)
 
 
 def _segment_to_dict(segment: Any) -> dict[str, Any]:
     """Convert a faster-whisper segment into the Whisper-style dict that
-    ``normalize_whisperx`` consumes, applying the word-timing correction."""
+    ``normalize_transcript`` consumes, applying the word-timing correction."""
     words = []
     for word in getattr(segment, "words", None) or []:
         start = max(0.0, _finite_float(word.start, 0.0) + _WORD_START_CORRECTION_S)
@@ -110,7 +110,7 @@ def _segment_to_dict(segment: Any) -> dict[str, Any]:
     }
 
 
-def normalize_whisperx(raw: dict[str, Any], duration: float, language: str = "unknown") -> Transcript:
+def normalize_transcript(raw: dict[str, Any], duration: float, language: str = "unknown") -> Transcript:
     words: list[Word] = []
     segments: list[TranscriptSegment] = []
     warnings: list[dict[str, str]] = []

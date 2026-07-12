@@ -191,7 +191,7 @@ def _vertical_placement(vertical_position: float, height: int) -> tuple[int, int
 
     The margin is clamped to a platform-safe band so text never hugs an edge.
     """
-    safe = max(0, min(height // 2, 120))
+    safe = min(height // 2, 120)
     if vertical_position < 0.4:
         margin = max(safe, min(height - safe, int(height * vertical_position)))
         return 8, margin

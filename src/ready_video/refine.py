@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .timeline import Timeline, TimelineSegment
+from .timeline import Timeline, TimelineSegment, merge_ranges
 from .transcript import Transcript
 
 EPS = 1e-6
@@ -86,13 +86,13 @@ def refine_timeline_with_transcript(
         else:
             keeps.append((prev_end, edited_dur))
 
-    merged_edited = _merge(keeps)
+    merged_edited = merge_ranges(keeps)
 
     # Map each tightened edited keep-range back to source via the first pass.
     source_ranges: list[tuple[float, float]] = []
     for start, end in merged_edited:
         source_ranges.extend(timeline.edited_range_to_source_ranges(start, end))
-    merged_source = _merge(source_ranges)
+    merged_source = merge_ranges(source_ranges)
 
     if not merged_source:
         # Degenerate (e.g. every word untimed): keep the original timeline.
@@ -113,16 +113,6 @@ def refine_timeline_with_transcript(
         )
         edited += duration
     return Timeline(source_duration=timeline.source_duration, edited_duration=round(edited, 6), segments=segments)
-
-
-def remap_edited_time(old: Timeline, new: Timeline, edited_time: float) -> float | None:
-    """Map an edited timestamp on ``old`` onto ``new`` (via shared source time).
-
-    Returns ``None`` when the point maps to source time that ``new`` dropped
-    (i.e. it fell inside a gap the second pass removed).
-    """
-    source = old.edited_to_source(edited_time)
-    return new.source_to_edited(source)
 
 
 def retime_transcript(transcript: Transcript, old: Timeline, new: Timeline) -> Transcript:
@@ -164,15 +154,3 @@ def _snap(old: Timeline, new: Timeline, edited_time: float, *, prefer: str) -> f
                 best_dist = dist
                 best = ed_edge
     return round(best, 6)
-
-
-def _merge(ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    merged: list[tuple[float, float]] = []
-    for start, end in sorted(ranges):
-        if end <= start + EPS:
-            continue
-        if merged and start <= merged[-1][1] + EPS:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-    return merged

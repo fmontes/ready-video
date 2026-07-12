@@ -8,7 +8,7 @@ from ready_video.transcript import (
     _WORD_START_CORRECTION_S,
     _segment_to_dict,
     create_transcript,
-    normalize_whisperx,
+    normalize_transcript,
     transcribe,
 )
 
@@ -81,7 +81,7 @@ def test_segment_to_dict_clamps_negative_starts_to_zero():
 
 
 def test_normalize_preserves_tokens_and_marks_interpolated_gaps():
-    transcript = normalize_whisperx(
+    transcript = normalize_transcript(
         {
             "segments": [
                 {
@@ -122,7 +122,7 @@ def test_normalize_preserves_tokens_and_marks_interpolated_gaps():
 
 
 def test_normalize_keeps_textual_tokens_when_empty_items_are_skipped():
-    transcript = normalize_whisperx(
+    transcript = normalize_transcript(
         {
             "segments": [
                 {
@@ -151,7 +151,7 @@ def test_normalize_keeps_textual_tokens_when_empty_items_are_skipped():
 
 
 def test_normalize_allocates_all_untimed_words_across_segment_bounds_by_character_count():
-    transcript = normalize_whisperx(
+    transcript = normalize_transcript(
         {
             "segments": [
                 {
@@ -173,7 +173,7 @@ def test_normalize_allocates_all_untimed_words_across_segment_bounds_by_characte
 
 
 def test_normalize_enforces_monotonic_nonnegative_bounded_timestamps_and_warns():
-    transcript = normalize_whisperx(
+    transcript = normalize_transcript(
         {
             "segments": [
                 {
