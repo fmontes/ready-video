@@ -147,7 +147,7 @@ def generate_subtitles(
         return
     events = _karaoke_events(transcript.words, config) if config.subtitles.mode == "karaoke" else _line_events(transcript.words, config)
     width, height = resolution
-    margin_v = max(120, min(height - 120, int(height * config.subtitles.vertical_position)))
+    alignment, margin_v = _vertical_placement(config.subtitles.vertical_position, height)
     header = [
         "[Script Info]",
         "ScriptType: v4.00+",
@@ -162,7 +162,7 @@ def generate_subtitles(
         "Style: Default,"
         f"{config.subtitles.font_family},{config.subtitles.font_size},{ass_color(config.subtitles.primary_color)},"
         f"{ass_color(config.subtitles.highlight_color)},{ass_color(config.subtitles.outline_color)},&H80000000,"
-        f"1,0,0,0,100,100,0,0,1,{config.subtitles.outline_width},{config.subtitles.shadow},2,80,80,{margin_v},1",
+        f"1,0,0,0,100,100,0,0,1,{config.subtitles.outline_width},{config.subtitles.shadow},{alignment},80,80,{margin_v},1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -179,6 +179,27 @@ def write_srt(events: list[tuple[float, float, str]], path: Path) -> None:
         plain = re.sub(r"\{[^}]*\}", "", text)
         lines += [str(i), f"{srt_time(start)} --> {srt_time(end)}", plain, ""]
     _atomic_write_text(path, "\n".join(lines))
+
+
+def _vertical_placement(vertical_position: float, height: int) -> tuple[int, int]:
+    """Map a normalized vertical_position (0 = top, 1 = bottom) to an ASS
+    alignment and margin.
+
+    - < 0.4  -> top-anchored (alignment 8); margin_v = distance down from top
+    - 0.4-0.6 -> middle-center (alignment 5); margin_v is ignored by libass
+    - > 0.6  -> bottom-anchored (alignment 2); margin_v = distance up from bottom
+
+    The margin is clamped to a platform-safe band so text never hugs an edge.
+    """
+    safe = max(0, min(height // 2, 120))
+    if vertical_position < 0.4:
+        margin = max(safe, min(height - safe, int(height * vertical_position)))
+        return 8, margin
+    if vertical_position > 0.6:
+        # distance up from the bottom = height * (1 - position)
+        margin = max(safe, min(height - safe, int(height * (1.0 - vertical_position))))
+        return 2, margin
+    return 5, 0
 
 
 def _karaoke_events(words: list[Any], config: Any) -> list[tuple[float, float, str]]:

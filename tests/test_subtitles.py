@@ -1,5 +1,21 @@
-from ready_video.subtitles import SubtitleStyle, cues_from_words, generate_ass, generate_srt
+from ready_video.subtitles import SubtitleStyle, _vertical_placement, cues_from_words, generate_ass, generate_srt
 from ready_video.timeline import TimelineSegment
+
+
+def test_vertical_placement_centers_at_midpoint():
+    # 0.5 must map to ASS middle-center (alignment 5), the default now.
+    alignment, _margin = _vertical_placement(0.5, 1920)
+    assert alignment == 5
+
+
+def test_vertical_placement_bands():
+    assert _vertical_placement(0.2, 1920)[0] == 8   # top-anchored
+    assert _vertical_placement(0.5, 1920)[0] == 5   # middle-center
+    assert _vertical_placement(0.85, 1920)[0] == 2  # bottom-anchored
+    # margins stay inside a platform-safe band
+    for vp in (0.0, 0.2, 0.85, 1.0):
+        _alignment, margin = _vertical_placement(vp, 1920)
+        assert 0 <= margin <= 1920
 
 
 def test_generate_srt_sorts_and_formats_cues():
