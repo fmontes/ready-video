@@ -32,6 +32,7 @@ def run_file(
     config_path: Path | None = None,
     review: bool = False,
     cli_overrides: dict | None = None,
+    out: Path | None = None,
 ) -> Path:
     input_path = input_path.resolve()
     if not input_path.is_file():
@@ -43,8 +44,9 @@ def run_file(
     cfg_hash = config_sha256(config)
     full_job_hash = job_sha256(content_hash, cfg_hash, PIPELINE_VERSION)
     jid = job_id(full_job_hash)
-    output_name = f"{sanitized_stem(input_path)}_{jid}.mp4"
-    output_path = config.paths.edited / output_name
+    output_path = _resolve_output_path(out, config.paths.edited, sanitized_stem(input_path))
+    output_name = output_path.name
+    ensure_dirs(output_path.parent)
     work_dir = config.paths.work / jid
     expected_resolution = target_resolution(config.render.aspect)
     if review:
@@ -102,6 +104,22 @@ def run_file(
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
+
+
+def _resolve_output_path(out: Path | None, edited_dir: Path, stem: str) -> Path:
+    """Where the rendered mp4 (and its .txt/.json sidecars) are written.
+
+    With ``--out`` the caller controls the path exactly: a ``.mp4`` suffix is
+    used as-is, anything else is treated as a stem and gets ``.mp4`` appended,
+    and the transcript/manifest sidecars are derived by swapping the suffix.
+    Without it, the default is ``<edited>/<stem>.mp4`` — no job id in the name.
+    """
+    if out is not None:
+        out = out.expanduser()
+        if out.suffix.lower() != ".mp4":
+            out = out.with_name(f"{out.name}.mp4")
+        return out.resolve()
+    return edited_dir / f"{stem}.mp4"
 
 
 def _write_transcript_txt(output_path: Path, transcript: Transcript) -> Path:
@@ -199,7 +217,7 @@ def _validate_output(output_path: Path, pair, *, expected_resolution: tuple[int,
         raise ReadyVideoError("OUTPUT_VALIDATION_FAILED", "Rendered output failed full decode validation.", details=completed.stderr)
 
 
-def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
+def approve(job_id_value: str, *, config_path: Path | None = None, out: Path | None = None) -> Path:
     work_dir = _review_work_dir(job_id_value, config_path=config_path)
     job_path = work_dir / "job.json"
     resolved_path = work_dir / "resolved-config.yaml"
@@ -222,8 +240,9 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
     source = SourceInfo.model_validate(json.loads(source_path.read_text()))
     timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
     ass_path = work_dir / "subs.ass"
-    output_name = f"{sanitized_stem(input_path)}_{job_id_value}.mp4"
-    output_path = config.paths.edited / output_name
+    output_path = _resolve_output_path(out, config.paths.edited, sanitized_stem(input_path))
+    output_name = output_path.name
+    ensure_dirs(output_path.parent)
     loudness = None
     if config.render.loudnorm:
         loudness_path = work_dir / "loudness.json"

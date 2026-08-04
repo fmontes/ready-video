@@ -50,7 +50,7 @@ def test_run_file_skips_existing_manifest_with_valid_media(tmp_path, monkeypatch
     config.paths.edited.mkdir()
     full_job_hash = job_sha256(file_sha256(source), config_sha256(config))
     jid = job_id(full_job_hash)
-    output_name = f"{sanitized_stem(source)}_{jid}.mp4"
+    output_name = f"{sanitized_stem(source)}.mp4"
     output = config.paths.edited / output_name
     output.write_bytes(b"rendered")
     manifest = make_manifest(
@@ -84,7 +84,7 @@ def test_review_mode_ignores_final_output_cache_and_reuses_work_artifacts(tmp_pa
     cfg_hash = config_sha256(config)
     full_job_hash = job_sha256(content_hash, cfg_hash)
     jid = job_id(full_job_hash)
-    output_name = f"{sanitized_stem(source)}_{jid}.mp4"
+    output_name = f"{sanitized_stem(source)}.mp4"
     output = config.paths.edited / output_name
     output.write_bytes(b"rendered")
     manifest = make_manifest(
@@ -246,7 +246,7 @@ def test_run_file_backfills_transcript_txt_on_cache_hit(tmp_path, monkeypatch):
     config.paths.work.mkdir()
     full_job_hash = job_sha256(file_sha256(source), config_sha256(config))
     jid = job_id(full_job_hash)
-    output_name = f"{sanitized_stem(source)}_{jid}.mp4"
+    output_name = f"{sanitized_stem(source)}.mp4"
     output = config.paths.edited / output_name
     output.write_bytes(b"rendered")
     manifest = make_manifest(
@@ -281,3 +281,79 @@ def test_run_file_backfills_transcript_txt_on_cache_hit(tmp_path, monkeypatch):
 
     assert run_file(source) == output
     assert output.with_suffix(".txt").read_text() == "[00:00.20] hi there\n"
+
+
+def test_run_file_out_param_controls_names_without_job_id(tmp_path, monkeypatch):
+    source = tmp_path / "Clip.mov"
+    source.write_bytes(b"not really media")
+    config = _config(tmp_path)
+    config.silence.enabled = False
+    config.render.loudnorm = False
+
+    from ready_video.timeline import SilenceParams, timeline_from_silences
+    from ready_video.transcript import Transcript, TranscriptSegment, Word
+
+    transcript = Transcript(
+        duration=1.0,
+        words=[Word(i=0, w="hi", start=0.0, end=0.5)],
+        segments=[TranscriptSegment(id=0, text="hi there", start=0.0, end=1.0, word_range=(0, 0))],
+    )
+
+    monkeypatch.setattr("ready_video.pipeline.load_config", lambda **kwargs: config)
+    monkeypatch.setattr("ready_video.pipeline.resolve_binaries", lambda: DummyPair())
+    monkeypatch.setattr(
+        "ready_video.pipeline.probe_source",
+        lambda *args, **kwargs: SourceInfo(duration=1.0, width=1080, height=1920, video_stream_index=0, audio_stream_index=1),
+    )
+    monkeypatch.setattr(
+        "ready_video.pipeline.analyze_silence",
+        lambda *args, **kwargs: timeline_from_silences(1.0, [], SilenceParams(enabled=False)),
+    )
+    monkeypatch.setattr("ready_video.pipeline.build_speech_wav", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ready_video.pipeline.transcribe", lambda *args, **kwargs: transcript)
+    monkeypatch.setattr("ready_video.pipeline.generate_subtitles", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ready_video.pipeline.render_video", lambda input_path, output_path, *a, **k: output_path.write_bytes(b"rendered"))
+    monkeypatch.setattr("ready_video.pipeline.ffprobe_json", lambda pair, args: VALID_VIDEO_PROBE)
+    monkeypatch.setattr("ready_video.pipeline.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=""))
+
+    # A bare stem gets a .mp4 suffix; sidecars follow the same base name.
+    out_dir = tmp_path / "custom"
+    output = run_file(source, out=out_dir / "my-reel")
+
+    assert output == (out_dir / "my-reel.mp4").resolve()
+    assert output.exists()
+    assert (out_dir / "my-reel.txt").read_text() == "[00:00.00] hi there\n"
+    assert (out_dir / "my-reel.json").exists()
+
+
+def test_run_file_default_output_name_has_no_job_id(tmp_path, monkeypatch):
+    source = tmp_path / "My Clip.mov"
+    source.write_bytes(b"not really media")
+    config = _config(tmp_path)
+    config.silence.enabled = False
+    config.render.loudnorm = False
+
+    from ready_video.timeline import SilenceParams, timeline_from_silences
+    from ready_video.transcript import Transcript
+
+    monkeypatch.setattr("ready_video.pipeline.load_config", lambda **kwargs: config)
+    monkeypatch.setattr("ready_video.pipeline.resolve_binaries", lambda: DummyPair())
+    monkeypatch.setattr(
+        "ready_video.pipeline.probe_source",
+        lambda *args, **kwargs: SourceInfo(duration=1.0, width=1080, height=1920, video_stream_index=0, audio_stream_index=1),
+    )
+    monkeypatch.setattr(
+        "ready_video.pipeline.analyze_silence",
+        lambda *args, **kwargs: timeline_from_silences(1.0, [], SilenceParams(enabled=False)),
+    )
+    monkeypatch.setattr("ready_video.pipeline.build_speech_wav", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ready_video.pipeline.transcribe", lambda *args, **kwargs: Transcript(duration=1.0))
+    monkeypatch.setattr("ready_video.pipeline.generate_subtitles", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ready_video.pipeline.render_video", lambda input_path, output_path, *a, **k: output_path.write_bytes(b"rendered"))
+    monkeypatch.setattr("ready_video.pipeline.ffprobe_json", lambda pair, args: VALID_VIDEO_PROBE)
+    monkeypatch.setattr("ready_video.pipeline.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=""))
+
+    output = run_file(source)
+
+    assert output == config.paths.edited / f"{sanitized_stem(source)}.mp4"
+    assert output.stem == sanitized_stem(source)  # no job id appended

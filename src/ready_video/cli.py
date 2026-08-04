@@ -15,11 +15,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         overrides = _overrides(args)
         if args.command == "run":
-            output = run_file(Path(args.file), config_path=args.config, review=args.review, cli_overrides=overrides)
+            output = run_file(
+                Path(args.file),
+                config_path=args.config,
+                review=args.review,
+                cli_overrides=overrides,
+                out=args.out,
+            )
             print(output)
             return 0
         if args.command == "approve":
-            print(approve(args.job_id, config_path=args.config))
+            print(approve(args.job_id, config_path=args.config, out=args.out))
             return 0
         if args.command == "init":
             target = user_config_path() if args.user else Path("config.yaml")
@@ -46,9 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run")
     run.add_argument("file")
     run.add_argument("--review", action="store_true")
+    run.add_argument("--out", type=Path, default=None, help="Output video path (e.g. result.mp4); the .txt transcript and .json manifest are written alongside it. Defaults to <edited>/<stem>.mp4.")
     _add_common(run, suppress_defaults=True)
     approve_parser = sub.add_parser("approve")
     approve_parser.add_argument("job_id")
+    approve_parser.add_argument("--out", type=Path, default=None, help="Output video path; the .txt transcript and .json manifest are written alongside it.")
     init = sub.add_parser("init")
     init.add_argument("--user", action="store_true")
     doctor_parser = sub.add_parser("doctor")

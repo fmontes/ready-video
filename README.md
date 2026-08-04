@@ -72,7 +72,14 @@ ready-video approve <job-id>                 # render using the reviewed config
 
 ## Output And File Locations
 
-Finished videos land in `./edited` by default (configurable via `paths.edited`). Each render is `./edited/<stem>_<job-id>.mp4` with an adjacent JSON manifest and a `<stem>_<job-id>.txt` plain-text transcript. The transcript is timestamped one line per segment in edited time (matching the final video), e.g. `[00:03.20] So today we're building...`. Re-running the same input with the same config is a no-op — the existing output is reused, and the transcript sidecar is regenerated if it is missing.
+Finished videos land in `./edited` by default (configurable via `paths.edited`). Each render is `./edited/<stem>.mp4` with two sidecars sharing the same base name: a `.json` manifest and a `.txt` plain-text transcript. The transcript is timestamped one line per segment in edited time (matching the final video), e.g. `[00:03.20] So today we're building...`. Re-running the same input with the same config is a no-op — the existing output is reused, and the transcript sidecar is regenerated if it is missing.
+
+Use `--out` to control the name and location of the output; the `.txt` and `.json` sidecars are always written alongside it:
+
+```bash
+ready-video run clip.mp4 --out reels/monday.mp4   # writes reels/monday.mp4, reels/monday.txt, reels/monday.json
+ready-video run clip.mp4 --out monday             # a bare stem gets a .mp4 suffix
+```
 
 Intermediate per-job artifacts (timeline, transcript, subtitles, review pages) live in an internal work directory under your platform cache and are not something you normally touch.
 

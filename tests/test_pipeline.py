@@ -163,7 +163,7 @@ def test_approve_uses_captured_resolved_config(monkeypatch, tmp_path: Path) -> N
 
     output_path = pipeline.approve(job_id, config_path=ambient_config_path)
 
-    assert output_path == captured_edited / f"clip_{job_id}.mp4"
+    assert output_path == captured_edited / "clip.mp4"
     assert output_path.exists()
     assert seen_configs[0].paths.edited == captured_edited
     assert not ambient_edited.exists()
