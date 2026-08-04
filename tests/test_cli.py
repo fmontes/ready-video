@@ -72,3 +72,31 @@ def test_cli_doctor_reports_environment_details(monkeypatch: pytest.MonkeyPatch,
     assert "faster-whisper: import ok (version 3.3.0)" in output
     assert f"path.edited: {config.paths.edited}" in output
     assert f"path.work: {config.paths.work}" in output
+
+
+def test_cli_run_threads_out_param(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    captured = {}
+
+    def fake_run_file(input_path, *, config_path=None, review=False, cli_overrides=None, out=None):
+        captured["input"] = input_path
+        captured["out"] = out
+        return Path("/rendered/result.mp4")
+
+    monkeypatch.setattr("ready_video.cli.run_file", fake_run_file)
+
+    assert main(["run", "clip.mp4", "--out", "out/result.mp4"]) == 0
+    assert captured["out"] == Path("out/result.mp4")
+    assert "/rendered/result.mp4" in capsys.readouterr().out
+
+
+def test_cli_run_defaults_out_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_run_file(input_path, *, config_path=None, review=False, cli_overrides=None, out=None):
+        captured["out"] = out
+        return Path("x.mp4")
+
+    monkeypatch.setattr("ready_video.cli.run_file", fake_run_file)
+
+    assert main(["run", "clip.mp4"]) == 0
+    assert captured["out"] is None

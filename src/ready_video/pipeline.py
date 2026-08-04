@@ -23,7 +23,7 @@ from .refine import TranscriptTrimParams, refine_timeline_with_transcript, retim
 from .renderer import measure_loudness, render_video, target_resolution
 from .subtitles import generate_subtitles
 from .timeline import Timeline
-from .transcript import Transcript, transcribe
+from .transcript import Transcript, format_transcript_txt, read_transcript, transcribe
 
 
 def run_file(
@@ -32,6 +32,7 @@ def run_file(
     config_path: Path | None = None,
     review: bool = False,
     cli_overrides: dict | None = None,
+    out: Path | None = None,
 ) -> Path:
     input_path = input_path.resolve()
     if not input_path.is_file():
@@ -43,8 +44,9 @@ def run_file(
     cfg_hash = config_sha256(config)
     full_job_hash = job_sha256(content_hash, cfg_hash, PIPELINE_VERSION)
     jid = job_id(full_job_hash)
-    output_name = f"{sanitized_stem(input_path)}_{jid}.mp4"
-    output_path = config.paths.edited / output_name
+    output_path = _resolve_output_path(out, config.paths.edited, sanitized_stem(input_path))
+    output_name = output_path.name
+    ensure_dirs(output_path.parent)
     work_dir = config.paths.work / jid
     expected_resolution = target_resolution(config.render.aspect)
     if review:
@@ -54,6 +56,7 @@ def run_file(
         if review_path is not None:
             return review_path
     elif _completed_output(output_path, full_job_hash, pair, expected_resolution=expected_resolution):
+        _ensure_transcript_txt(output_path, work_dir)
         return output_path
     ensure_dirs(work_dir)
     atomic_write_yaml(work_dir / "resolved-config.yaml", config)
@@ -91,6 +94,7 @@ def run_file(
         atomic_write_json(work_dir / "loudness.json", loudness)
     render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=expected_resolution)
+    _write_transcript_txt(output_path, transcript)
     manifest = make_manifest(
         input_path=input_path,
         output_name=output_name,
@@ -100,6 +104,38 @@ def run_file(
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
+
+
+def _resolve_output_path(out: Path | None, edited_dir: Path, stem: str) -> Path:
+    """Where the rendered mp4 (and its .txt/.json sidecars) are written.
+
+    With ``--out`` the caller controls the path exactly: a ``.mp4`` suffix is
+    used as-is, anything else is treated as a stem and gets ``.mp4`` appended,
+    and the transcript/manifest sidecars are derived by swapping the suffix.
+    Without it, the default is ``<edited>/<stem>.mp4`` — no job id in the name.
+    """
+    if out is not None:
+        out = out.expanduser()
+        if out.suffix.lower() != ".mp4":
+            out = out.with_name(f"{out.name}.mp4")
+        return out.resolve()
+    return edited_dir / f"{stem}.mp4"
+
+
+def _write_transcript_txt(output_path: Path, transcript: Transcript) -> Path:
+    """Write the timestamped plain-text transcript beside the rendered video."""
+    txt_path = output_path.with_suffix(".txt")
+    atomic_write_text(txt_path, format_transcript_txt(transcript))
+    return txt_path
+
+
+def _ensure_transcript_txt(output_path: Path, work_dir: Path) -> None:
+    """Backfill the sidecar .txt on a cache hit, from the persisted transcript."""
+    if output_path.with_suffix(".txt").exists():
+        return
+    transcript_path = work_dir / "transcript.json"
+    if transcript_path.exists():
+        _write_transcript_txt(output_path, read_transcript(transcript_path))
 
 
 def _transcript_trim_params(config: ResolvedConfig) -> TranscriptTrimParams:
@@ -181,7 +217,7 @@ def _validate_output(output_path: Path, pair, *, expected_resolution: tuple[int,
         raise ReadyVideoError("OUTPUT_VALIDATION_FAILED", "Rendered output failed full decode validation.", details=completed.stderr)
 
 
-def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
+def approve(job_id_value: str, *, config_path: Path | None = None, out: Path | None = None) -> Path:
     work_dir = _review_work_dir(job_id_value, config_path=config_path)
     job_path = work_dir / "job.json"
     resolved_path = work_dir / "resolved-config.yaml"
@@ -204,8 +240,9 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
     source = SourceInfo.model_validate(json.loads(source_path.read_text()))
     timeline = Timeline.model_validate(json.loads(timeline_path.read_text()))
     ass_path = work_dir / "subs.ass"
-    output_name = f"{sanitized_stem(input_path)}_{job_id_value}.mp4"
-    output_path = config.paths.edited / output_name
+    output_path = _resolve_output_path(out, config.paths.edited, sanitized_stem(input_path))
+    output_name = output_path.name
+    ensure_dirs(output_path.parent)
     loudness = None
     if config.render.loudnorm:
         loudness_path = work_dir / "loudness.json"
@@ -216,6 +253,7 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
             atomic_write_json(loudness_path, loudness)
     render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=target_resolution(config.render.aspect))
+    _write_transcript_txt(output_path, read_transcript(transcript_path))
 
     content_hash = file_sha256(input_path)
     cfg_hash = config_sha256(config)

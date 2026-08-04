@@ -6,8 +6,12 @@ from ready_video.errors import ReadyVideoError, TranscriptError
 from ready_video.config import Config
 from ready_video.transcript import (
     _WORD_START_CORRECTION_S,
+    Transcript,
+    TranscriptSegment,
+    Word,
     _segment_to_dict,
     create_transcript,
+    format_transcript_txt,
     normalize_transcript,
     transcribe,
 )
@@ -205,3 +209,35 @@ def test_normalize_enforces_monotonic_nonnegative_bounded_timestamps_and_warns()
     assert [(word.start, word.end) for word in transcript.words] == [(0.0, 1.0), (1.0, 3.0)]
     assert all(0.0 <= word.start <= word.end <= transcript.duration for word in transcript.words)
     assert [warning["reason"] for warning in transcript.warnings] == ["invalid_segment_bounds", "no_textual_word_tokens"]
+
+
+def test_format_transcript_txt_uses_timestamped_segment_lines():
+    transcript = Transcript(
+        language="en",
+        duration=125.0,
+        words=[],
+        segments=[
+            TranscriptSegment(id=0, text="  So today we're building. ", start=3.2, end=5.0, word_range=(0, 1)),
+            TranscriptSegment(id=1, text="Second line here", start=65.07, end=70.0, word_range=(2, 3)),
+        ],
+    )
+
+    text = format_transcript_txt(transcript)
+
+    assert text == "[00:03.20] So today we're building.\n[01:05.07] Second line here\n"
+
+
+def test_format_transcript_txt_falls_back_to_words_without_segments():
+    transcript = Transcript(
+        duration=5.0,
+        words=[Word(i=0, w="hello", start=0.0, end=0.5), Word(i=1, w="world", start=0.6, end=1.0)],
+        segments=[],
+    )
+
+    text = format_transcript_txt(transcript)
+
+    assert text == "[00:00.00] hello\n[00:00.60] world\n"
+
+
+def test_format_transcript_txt_empty_when_nothing_to_write():
+    assert format_transcript_txt(Transcript(duration=0.0)) == ""
