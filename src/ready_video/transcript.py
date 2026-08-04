@@ -290,6 +290,40 @@ def read_transcript(path: Path) -> Transcript:
     return Transcript.model_validate(json.loads(path.read_text()))
 
 
+def _format_clock(seconds: float) -> str:
+    """Render an edited-time offset as ``MM:SS.mm`` (``H:MM:SS.mm`` past an hour)."""
+    total = max(0.0, _finite_float(seconds, 0.0))
+    hundredths = int(round(total * 100))
+    hours, hundredths = divmod(hundredths, 360000)
+    minutes, hundredths = divmod(hundredths, 6000)
+    secs, hundredths = divmod(hundredths, 100)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}.{hundredths:02d}"
+    return f"{minutes:02d}:{secs:02d}.{hundredths:02d}"
+
+
+def format_transcript_txt(transcript: Transcript) -> str:
+    """Plain-text transcript as timestamped lines in edited time.
+
+    One line per transcript segment (``[MM:SS.mm] text``), falling back to
+    per-word lines when a transcript carries no segments. Timestamps are in
+    edited time, matching the final rendered video. Returns an empty string
+    when there is nothing to write.
+    """
+    lines: list[str] = []
+    if transcript.segments:
+        for segment in transcript.segments:
+            text = segment.text.strip()
+            if text:
+                lines.append(f"[{_format_clock(segment.start)}] {text}")
+    else:
+        for word in transcript.words:
+            text = word.w.strip()
+            if text:
+                lines.append(f"[{_format_clock(word.start)}] {text}")
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def create_transcript(speech_wav: Path, output_path: Path, *, fallback: str | None = None) -> dict:
     if fallback == "empty":
         payload = {"engine": "empty-fallback", "segments": [], "words": []}

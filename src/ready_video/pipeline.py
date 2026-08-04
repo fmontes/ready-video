@@ -23,7 +23,7 @@ from .refine import TranscriptTrimParams, refine_timeline_with_transcript, retim
 from .renderer import measure_loudness, render_video, target_resolution
 from .subtitles import generate_subtitles
 from .timeline import Timeline
-from .transcript import Transcript, transcribe
+from .transcript import Transcript, format_transcript_txt, read_transcript, transcribe
 
 
 def run_file(
@@ -54,6 +54,7 @@ def run_file(
         if review_path is not None:
             return review_path
     elif _completed_output(output_path, full_job_hash, pair, expected_resolution=expected_resolution):
+        _ensure_transcript_txt(output_path, work_dir)
         return output_path
     ensure_dirs(work_dir)
     atomic_write_yaml(work_dir / "resolved-config.yaml", config)
@@ -91,6 +92,7 @@ def run_file(
         atomic_write_json(work_dir / "loudness.json", loudness)
     render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=expected_resolution)
+    _write_transcript_txt(output_path, transcript)
     manifest = make_manifest(
         input_path=input_path,
         output_name=output_name,
@@ -100,6 +102,22 @@ def run_file(
     )
     atomic_write_json(output_path.with_suffix(".json"), manifest)
     return output_path
+
+
+def _write_transcript_txt(output_path: Path, transcript: Transcript) -> Path:
+    """Write the timestamped plain-text transcript beside the rendered video."""
+    txt_path = output_path.with_suffix(".txt")
+    atomic_write_text(txt_path, format_transcript_txt(transcript))
+    return txt_path
+
+
+def _ensure_transcript_txt(output_path: Path, work_dir: Path) -> None:
+    """Backfill the sidecar .txt on a cache hit, from the persisted transcript."""
+    if output_path.with_suffix(".txt").exists():
+        return
+    transcript_path = work_dir / "transcript.json"
+    if transcript_path.exists():
+        _write_transcript_txt(output_path, read_transcript(transcript_path))
 
 
 def _transcript_trim_params(config: ResolvedConfig) -> TranscriptTrimParams:
@@ -216,6 +234,7 @@ def approve(job_id_value: str, *, config_path: Path | None = None) -> Path:
             atomic_write_json(loudness_path, loudness)
     render_video(input_path, output_path, pair, source, timeline, config, subtitles_path=ass_path if ass_path.exists() else None, loudness=loudness)
     _validate_output(output_path, pair, expected_resolution=target_resolution(config.render.aspect))
+    _write_transcript_txt(output_path, read_transcript(transcript_path))
 
     content_hash = file_sha256(input_path)
     cfg_hash = config_sha256(config)
